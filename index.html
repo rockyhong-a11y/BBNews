@@ -88,6 +88,51 @@
   .league .src-info .err { color: var(--error); }
   .league .src-info .ok { color: #4ade80; }
 
+  .paste-wrap {
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid var(--border);
+  }
+  .paste-wrap details { padding: 0; }
+  .paste-wrap summary {
+    cursor: pointer; padding: 8px 18px;
+    font-size: 12px; color: var(--accent);
+    user-select: none;
+    list-style: none;
+  }
+  .paste-wrap summary::-webkit-details-marker { display: none; }
+  .paste-wrap summary:hover { color: #7dd3fc; }
+  .paste-wrap[open] summary, .paste-wrap details[open] summary {
+    border-bottom: 1px solid var(--border);
+  }
+  .paste-help {
+    padding: 8px 18px; font-size: 11px; color: var(--muted);
+    background: rgba(0,0,0,0.15);
+  }
+  .paste-help a { color: var(--accent); }
+  .paste-wrap textarea {
+    width: 100%; min-height: 120px; resize: vertical;
+    background: var(--bg); color: var(--text);
+    border: 0; border-bottom: 1px solid var(--border);
+    padding: 10px 18px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.5;
+  }
+  .paste-wrap textarea:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+  .paste-actions {
+    padding: 8px 18px;
+    display: flex; gap: 8px;
+  }
+  .paste-actions button {
+    background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff;
+    border: 0; padding: 6px 14px; border-radius: 6px;
+    font-weight: 600; cursor: pointer; font-size: 12px;
+  }
+  .paste-actions button.secondary {
+    background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .paste-actions button:hover { transform: translateY(-1px); }
+
   .tx-list {
     flex: 1; overflow-y: auto; max-height: 78vh;
   }
@@ -244,6 +289,22 @@
       <span>소스: <b>koreabaseball.com/Player/Trade.aspx</b></span>
       <span id="src-stat-kbo"></span>
     </div>
+    <div class="paste-wrap">
+      <details>
+        <summary>📋 KBO 페이지 텍스트 직접 붙여넣기 (OCR 대안 · 더 정확)</summary>
+        <div class="paste-help">
+          KBO 트레이드 페이지(<a href="https://www.koreabaseball.com/Player/Trade.aspx" target="_blank" rel="noopener">바로가기</a>)의 표 영역을 마우스로 드래그·복사해 아래에 붙여넣으세요.
+        </div>
+        <textarea id="kbo-paste" placeholder="예시:
+2026-05-16  자유계약선수  한화  쿠싱(투수)
+2026-05-15  트레이드  LG → KIA  홍길동
+2026-05-14  부상자 명단  두산  김철수"></textarea>
+        <div class="paste-actions">
+          <button id="kbo-paste-parse">분석 → 시각화</button>
+          <button id="kbo-paste-clear" class="secondary">지우기</button>
+        </div>
+      </details>
+    </div>
     <div class="tx-list" id="list-kbo"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
   </section>
 
@@ -289,25 +350,25 @@ const wp = (filename, lang = "en") => `https://${lang}.wikipedia.org/wiki/Specia
 
 const KBO_TEAMS = {
   KIA:  { code: "KIA", name: "KIA 타이거즈", color: "#EA002C", textColor: "#fff",
-          logos: [wp("Kia_Tigers_logo.svg"), "https://www.koreabaseball.com/images/emblem/regular/HT.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/HT.png", wp("Kia_Tigers_logo.svg"), wp("Kia_Tigers_emblem.svg")] },
   두산: { code: "두산", name: "두산 베어스", color: "#13294B", textColor: "#fff",
-          logos: [wp("Doosan_Bears_emblem.svg"), wp("Doosan_Bears.svg"), "https://www.koreabaseball.com/images/emblem/regular/OB.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/OB.png", wp("Doosan_Bears_emblem.svg"), wp("Doosan_Bears.svg")] },
   롯데: { code: "롯데", name: "롯데 자이언츠", color: "#041E42", textColor: "#fff",
-          logos: [wp("Lotte_Giants.svg"), wp("Lotte_Giants_emblem.svg"), "https://www.koreabaseball.com/images/emblem/regular/LT.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/LT.png", wp("Lotte_Giants.svg"), wp("Lotte_Giants_emblem.svg")] },
   삼성: { code: "삼성", name: "삼성 라이온즈", color: "#074CA1", textColor: "#fff",
-          logos: [wp("Samsung_Lions_emblem.svg"), wp("Samsung_Lions_Insignia.svg"), "https://www.koreabaseball.com/images/emblem/regular/SS.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/SS.png", wp("Samsung_Lions_emblem.svg"), wp("Samsung_Lions.svg")] },
   SSG:  { code: "SSG", name: "SSG 랜더스", color: "#CE0E2D", textColor: "#fff",
-          logos: [wp("SSG_Landers_Insignia.svg"), wp("SSG_Landers_emblem.svg"), "https://www.koreabaseball.com/images/emblem/regular/SK.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/SK.png", wp("SSG_Landers_emblem.svg"), wp("SSG_Landers.svg")] },
   키움: { code: "키움", name: "키움 히어로즈", color: "#820024", textColor: "#fff",
-          logos: [wp("Kiwoom_Heroes_emblem.svg"), wp("Kiwoom_Heroes.svg"), "https://www.koreabaseball.com/images/emblem/regular/WO.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/WO.png", wp("Kiwoom_Heroes_emblem.svg"), wp("Kiwoom_Heroes.svg")] },
   한화: { code: "한화", name: "한화 이글스", color: "#FC4E00", textColor: "#fff",
-          logos: [wp("Hanwha_Eagles_logo.svg"), wp("Hanwha_Eagles.svg"), "https://www.koreabaseball.com/images/emblem/regular/HH.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/HH.png", wp("Hanwha_Eagles.svg"), wp("Hanwha_Eagles_logo.svg")] },
   LG:   { code: "LG",  name: "LG 트윈스", color: "#C30452", textColor: "#fff",
-          logos: [wp("LG_Twins.svg"), wp("LG_Twins_logo.svg"), "https://www.koreabaseball.com/images/emblem/regular/LG.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/LG.png", wp("LG_Twins.svg"), wp("LG_Twins_logo.svg")] },
   NC:   { code: "NC",  name: "NC 다이노스", color: "#315288", textColor: "#fff",
-          logos: [wp("NC_Dinos_logo.svg"), wp("NC_Dinos_Insignia.svg"), "https://www.koreabaseball.com/images/emblem/regular/NC.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/NC.png", wp("NC_Dinos_logo.svg"), wp("NC_Dinos.svg")] },
   KT:   { code: "KT",  name: "KT 위즈", color: "#000000", textColor: "#fff",
-          logos: [wp("KT_Wiz_emblem.svg"), wp("KT_Wiz_logo.svg"), "https://www.koreabaseball.com/images/emblem/regular/KT.png"] },
+          logos: ["https://www.koreabaseball.com/images/emblem/regular/KT.png", wp("KT_Wiz_emblem.svg"), wp("KT_Wiz.svg")] },
 };
 
 const KBO_ALIASES = {
@@ -359,31 +420,34 @@ const MLB_TEAM_BY_ID = {
 function mlbLogoUrl(id) { return `https://www.mlbstatic.com/team-logos/${id}.svg`; }
 
 // NPB 12개 구단 - canonical 팀 + 별칭
+// NPB 로고: Wikipedia 파일명 변형(대문자/소문자/insignia·logo·emblem) 다수 후보 + ja.wikipedia 폴백
+const wpJa = (filename) => `https://ja.wikipedia.org/wiki/Special:FilePath/${encodeURIComponent(filename)}`;
+
 const NPB_TEAMS = {
   Giants:   { code: "巨人",   name: "요미우리 자이언츠",   color: "#F97709", textColor: "#fff",
-              logos: [wp("Yomiuri_Giants_Insignia.svg"), wp("Yomiuri_Giants_logo.svg")] },
+              logos: [wp("Yomiuri_Giants_Insignia.svg"), wp("Yomiuri_Giants_insignia.svg"), wp("Yomiuri_Giants_logo.svg"), wpJa("読売ジャイアンツ団章.svg")] },
   Tigers:   { code: "阪神",   name: "한신 타이거스",       color: "#FFE201", textColor: "#000",
-              logos: [wp("Hanshin_Tigers_Insignia.svg"), wp("Hanshin_Tigers_logo.svg")] },
+              logos: [wp("Hanshin_Tigers_Insignia.svg"), wp("Hanshin_Tigers_insignia.svg"), wp("Hanshin_Tigers_logo.svg"), wpJa("阪神タイガース団章.svg")] },
   Swallows: { code: "ヤクルト", name: "야쿠르트 스왈로스",  color: "#00305B", textColor: "#fff",
-              logos: [wp("Tokyo_Yakult_Swallows_insignia.svg"), wp("Tokyo_Yakult_Swallows_Insignia.svg")] },
+              logos: [wp("Tokyo_Yakult_Swallows_Insignia.svg"), wp("Tokyo_Yakult_Swallows_insignia.svg"), wp("Yakult_Swallows_logo.svg")] },
   DeNA:     { code: "DeNA",  name: "요코하마 DeNA",       color: "#0055A5", textColor: "#fff",
-              logos: [wp("Yokohama_DeNA_BayStars_Insignia.svg"), wp("Yokohama_DeNA_BayStars_insignia.svg")] },
+              logos: [wp("Yokohama_DeNA_BayStars_Insignia.svg"), wp("Yokohama_DeNA_BayStars_insignia.svg"), wp("Yokohama_DeNA_BayStars_logo.svg")] },
   Carp:     { code: "広島",   name: "히로시마 카프",       color: "#FF2A00", textColor: "#fff",
-              logos: [wp("Hiroshima_Toyo_Carp_Insignia.svg"), wp("Hiroshima_Toyo_Carp_insignia.svg")] },
+              logos: [wp("Hiroshima_Toyo_Carp_Insignia.svg"), wp("Hiroshima_Toyo_Carp_insignia.svg"), wp("Hiroshima_Toyo_Carp_logo.svg")] },
   Dragons:  { code: "中日",   name: "주니치 드래곤즈",     color: "#002569", textColor: "#fff",
-              logos: [wp("Chunichi_Dragons_Insignia.svg"), wp("Chunichi_Dragons_logo.svg")] },
+              logos: [wp("Chunichi_Dragons_Insignia.svg"), wp("Chunichi_Dragons_insignia.svg"), wp("Chunichi_Dragons_logo.svg")] },
   Hawks:    { code: "SB",    name: "소프트뱅크 호크스",   color: "#FCC800", textColor: "#000",
-              logos: [wp("Fukuoka_SoftBank_Hawks_Insignia.svg"), wp("Fukuoka_Softbank_Hawks_Insignia.svg")] },
+              logos: [wp("Fukuoka_SoftBank_Hawks_Insignia.svg"), wp("Fukuoka_SoftBank_Hawks_insignia.svg"), wp("Fukuoka_Softbank_Hawks_Insignia.svg"), wp("Fukuoka_SoftBank_Hawks_logo.svg")] },
   Lions:    { code: "西武",  name: "세이부 라이온즈",     color: "#002B8E", textColor: "#fff",
-              logos: [wp("Saitama_Seibu_Lions_insignia.svg"), wp("Saitama_Seibu_Lions_Insignia.svg")] },
+              logos: [wp("Saitama_Seibu_Lions_Insignia.svg"), wp("Saitama_Seibu_Lions_insignia.svg"), wp("Seibu_Lions_logo.svg")] },
   Eagles:   { code: "楽天",  name: "라쿠텐 이글스",       color: "#870010", textColor: "#fff",
-              logos: [wp("Tohoku_Rakuten_Golden_Eagles_Insignia.svg"), wp("Tohoku_Rakuten_Golden_Eagles_insignia.svg")] },
+              logos: [wp("Tohoku_Rakuten_Golden_Eagles_Insignia.svg"), wp("Tohoku_Rakuten_Golden_Eagles_insignia.svg"), wp("Rakuten_Eagles_logo.svg")] },
   Marines:  { code: "ロッテ", name: "롯데 마린스",         color: "#000000", textColor: "#fff",
-              logos: [wp("Chiba_Lotte_Marines_Insignia.svg"), wp("Chiba_Lotte_Marines_insignia.svg")] },
+              logos: [wp("Chiba_Lotte_Marines_Insignia.svg"), wp("Chiba_Lotte_Marines_insignia.svg"), wp("Chiba_Lotte_Marines_logo.svg")] },
   Fighters: { code: "日ハム", name: "닛폰햄 파이터스",     color: "#006699", textColor: "#fff",
-              logos: [wp("Hokkaido_Nippon-Ham_Fighters_Insignia.svg"), wp("Hokkaido_Nippon-Ham_Fighters_insignia.svg")] },
+              logos: [wp("Hokkaido_Nippon-Ham_Fighters_Insignia.svg"), wp("Hokkaido_Nippon-Ham_Fighters_insignia.svg"), wp("Nippon-Ham_Fighters_logo.svg")] },
   Buffaloes:{ code: "オリックス", name: "오릭스 버팔로스",  color: "#000033", textColor: "#fff",
-              logos: [wp("Orix_Buffaloes_Insignia.svg"), wp("Orix_Buffaloes_insignia.svg")] },
+              logos: [wp("Orix_Buffaloes_Insignia.svg"), wp("Orix_Buffaloes_insignia.svg"), wp("Orix_Buffaloes_logo.svg")] },
 };
 
 const NPB_ALIASES = {
@@ -613,34 +677,80 @@ async function fetchKboViaOCR(range, progressEl) {
   throw lastErr || new Error("OCR 실패");
 }
 
-// KBO 추출 텍스트 → 상태값 분류 (구체적 키워드 우선)
+// KBO 공식 사이트의 22종 항목에 맞춘 분류 (구체적·긴 키워드 우선)
 function classifyKboLine(text) {
-  if (/트레이드|맞트레이드|교환|\d+\s*[:\s]\s*\d+\s*트레이드/.test(text))
+  // 트레이드 (웨이버 트레이드 포함)
+  if (/트레이드\s*\(\s*웨이버\s*\)/.test(text))
+    return { type: "trade", label: "트레이드(웨이버)" };
+  if (/트레이드|맞트레이드|\d+\s*[:\s]\s*\d+\s*트레이드/.test(text))
     return { type: "trade", label: "트레이드" };
-  if (/부상자\s*명단|부상자명단|부상자\s*등재|IL\s*등재/i.test(text))
-    return { type: "il", label: "부상자명단" };
-  if (/재활군|재활 군|1군\s*말소|엔트리\s*제외/.test(text))
-    return { type: "il", label: "1군 말소" };
+
+  // 부상/재활/징계
+  if (/부상자\s*명단/.test(text))
+    return { type: "il", label: "부상자 명단" };
+  if (/치료\s*·?\s*재활\s*명단|재활\s*명단/.test(text))
+    return { type: "il", label: "치료·재활명단" };
+  if (/재활선수\s*\(\s*외국인/.test(text))
+    return { type: "il", label: "재활선수(외국인)" };
+  if (/참가활동\s*정지/.test(text))
+    return { type: "il", label: "참가활동 정지" };
   if (/약물|도핑|출장정지|출전정지|징계/.test(text))
     return { type: "il", label: "징계/약물" };
-  if (/자유계약\s*선수|자유계약공시|자유계약 공시|FA\s*공시/.test(text))
-    return { type: "released", label: "자유계약" };
-  if (/웨이버|웨이버 공시|보류명단\s*제외/.test(text))
+  if (/1군\s*말소|엔트리\s*제외|재활군/.test(text))
+    return { type: "il", label: "1군 말소" };
+
+  // 방출/자유계약/웨이버
+  if (/자유계약\s*선수|자유계약\s*공시|자유계약공시|FA\s*공시/.test(text))
+    return { type: "released", label: "자유계약 선수" };
+  if (/임의해지\s*복귀/.test(text))
+    return { type: "returned", label: "임의해지 복귀" };
+  if (/임의해지|임의\s*탈퇴|임의탈퇴/.test(text))
+    return { type: "released", label: "임의해지" };
+  if (/웨이버/.test(text))
     return { type: "waiver", label: "웨이버" };
   if (/방출/.test(text))
     return { type: "released", label: "방출" };
-  if (/임의\s*탈퇴|임의탈퇴|임의해지/.test(text))
-    return { type: "released", label: "임의탈퇴" };
+
+  // FA / 드래프트
+  if (/FA\s*보상선수/.test(text))
+    return { type: "signed", label: "FA 보상선수" };
+  if (/FA\s*자격취득/.test(text))
+    return { type: "signed", label: "FA 자격취득" };
+  if (/FA\s*계약/.test(text))
+    return { type: "signed", label: "FA 계약" };
+  if (/2차\s*드래프트/.test(text))
+    return { type: "signed", label: "2차 드래프트" };
+
+  // 등록/복귀/소속
+  if (/해외\s*복귀/.test(text))
+    return { type: "returned", label: "해외 복귀" };
+  if (/추가\s*등록/.test(text))
+    return { type: "selected", label: "추가 등록" };
+  if (/신규\s*등록|1군\s*등록|콜업|엔트리\s*등록/.test(text))
+    return { type: "selected", label: "신규/콜업" };
+  if (/소속선수/.test(text))
+    return { type: "selected", label: "소속선수" };
+
+  // 행정/기타
+  if (/등번호\s*변경/.test(text))
+    return { type: "other", label: "등번호 변경" };
+  if (/개명/.test(text))
+    return { type: "other", label: "개명" };
+  if (/군\s*보류/.test(text))
+    return { type: "other", label: "군 보류" };
+  if (/경조휴가/.test(text))
+    return { type: "other", label: "경조휴가" };
   if (/은퇴/.test(text))
     return { type: "retired", label: "은퇴" };
-  if (/1군\s*등록|신규\s*등록|콜업|엔트리\s*등록/.test(text))
-    return { type: "selected", label: "신규/콜업" };
+
+  // 외국인 / 일반 계약
   if (/외국인선수\s*교체|외국인\s*교체|용병\s*교체/.test(text))
     return { type: "signed", label: "외국인 교체" };
   if (/영입|입단|사인|재계약|신규\s*계약/.test(text))
     return { type: "signed", label: "계약" };
   if (/복귀/.test(text))
     return { type: "returned", label: "복귀" };
+
   return { type: "other", label: "이동" };
 }
 
@@ -1082,30 +1192,28 @@ async function refresh() {
 
   const totals = {};
 
-  // KBO — 1차 OCR 캡처, 실패 시 HTML 스크래핑 폴백
+  // KBO — HTML 스크래핑 자동 실행 (OCR은 부정확하므로 자동 제외)
+  // 데이터가 비면 사용자에게 직접 붙여넣기 안내
   try {
     const kboStatEl = document.getElementById("src-stat-kbo");
-    let mode = "ocr";
-    let result;
-    try {
-      result = await fetchKboViaOCR(range, kboStatEl);
-    } catch (ocrErr) {
-      console.warn("OCR 실패 → HTML 스크래핑 폴백:", ocrErr.message);
-      mode = "scrape";
-      result = await fetchKboTrades(range);
-    }
-    renderLeague("kbo", result.items);
-    totals.kbo = result.items.length;
-    document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
-    if (mode === "ocr") {
-      kboStatEl.innerHTML = `<span class="ok">📸 OCR · 행 ${result.stats.ocrLines} · 날짜行 ${result.stats.datedLines} · 추출 ${result.stats.extracted} → 7일내 ${result.items.length}</span>`;
+    const result = await fetchKboTrades(range);
+    if (result.items.length === 0) {
+      // 페이지가 JS 동적 로딩이라 빈 경우 안내 메시지
+      document.getElementById("list-kbo").innerHTML =
+        `<div class="tx-empty">KBO 페이지가 JS 동적 로딩이라 직접 스크래핑이 어렵습니다.<br><br>
+         👉 위의 <b>📋 텍스트 직접 붙여넣기</b>를 펼쳐 KBO 페이지의 표 영역을 복사·붙여넣으세요.</div>`;
+      kboStatEl.innerHTML = `<span class="err">📄 HTML · 데이터 0건 (붙여넣기 권장)</span>`;
+      totals.kbo = 0;
     } else {
+      renderLeague("kbo", result.items);
+      totals.kbo = result.items.length;
+      document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
       const s = result.stats;
       kboStatEl.innerHTML = `<span class="ok">📄 HTML · 테이블 ${s.tables} · 행 ${s.rows} · 날짜行 ${s.dated} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
     }
   } catch (e) {
     console.error("KBO 실패:", e);
-    document.getElementById("list-kbo").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
+    document.getElementById("list-kbo").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}<br><br>👉 위의 <b>📋 텍스트 직접 붙여넣기</b>를 사용해 주세요.</div>`;
     document.getElementById("src-stat-kbo").innerHTML = `<span class="err">실패: ${escapeHtml((e.message || "").slice(0,60))}</span>`;
     totals.kbo = 0;
   }
@@ -1156,6 +1264,43 @@ async function refresh() {
   meta.textContent = `마지막 갱신: ${new Date().toLocaleString("ko-KR")}`;
   showToast(`최근 7일 이적·등록 · KBO ${totals.kbo || 0} / MLB ${totals.mlb || 0} / NPB ${totals.npb || 0}건`);
 }
+
+/* ============================
+ * KBO 텍스트 붙여넣기 모드
+ * ============================ */
+function parseKboPastedText(rawText, range) {
+  // OCR과 동일한 파서 재활용 (이미 줄 단위 + 날짜 + 분류 처리)
+  const result = parseKboOcrText(rawText, range);
+  // 진단용 추가 정보
+  return {
+    items: result.items,
+    stats: { ...result.stats, mode: "paste" }
+  };
+}
+
+document.getElementById("kbo-paste-parse").addEventListener("click", () => {
+  const text = document.getElementById("kbo-paste").value || "";
+  if (!text.trim()) {
+    showToast("붙여넣은 텍스트가 비어있습니다.");
+    return;
+  }
+  const range = getRange();
+  const kboStatEl = document.getElementById("src-stat-kbo");
+  try {
+    const { items, stats } = parseKboPastedText(text, range);
+    renderLeague("kbo", items);
+    document.getElementById("count-kbo").textContent = `${items.length}건 (최근 7일)`;
+    kboStatEl.innerHTML = `<span class="ok">📋 붙여넣기 · 행 ${stats.ocrLines} · 날짜行 ${stats.datedLines} · 추출 ${stats.extracted} → 7일내 ${items.length}</span>`;
+    showToast(`KBO 붙여넣기 분석 완료 · ${items.length}건`);
+  } catch (e) {
+    console.error("KBO 붙여넣기 파싱 실패:", e);
+    kboStatEl.innerHTML = `<span class="err">파싱 실패: ${escapeHtml(e.message || "")}</span>`;
+  }
+});
+
+document.getElementById("kbo-paste-clear").addEventListener("click", () => {
+  document.getElementById("kbo-paste").value = "";
+});
 
 document.getElementById("refreshBtn").addEventListener("click", refresh);
 window.addEventListener("DOMContentLoaded", refresh);
