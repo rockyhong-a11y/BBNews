@@ -384,48 +384,39 @@
 const wp = (filename, lang = "en") => `https://${lang}.wikipedia.org/wiki/Special:FilePath/${encodeURIComponent(filename)}`;
 const wpKo = (filename) => wp(filename, "ko");
 const wpJaShort = (filename) => wp(filename, "ja");
-// KBO 공식 엠블럼 (대체 경로도 시도)
+// KBO 공식 엠블럼
 const kboEm = (code) => `https://www.koreabaseball.com/images/emblem/regular/${code}.png`;
+
+// images.weserv.nl 무료 이미지 프록시 — hotlink·CORS·리다이렉트 우회
+// koreabaseball.com 직접 접근 시 referer 차단이 빈번해 프록시 경유가 가장 안정적
+const wsv = (url) => {
+  const cleaned = url.replace(/^https?:\/\//, "");
+  return `https://images.weserv.nl/?url=${encodeURIComponent(cleaned)}`;
+};
+// 각 URL을 [프록시 경유, 직접] 페어로 펼침 → 어느 한 쪽이라도 살아있으면 표시됨
+const buildLogos = (...urls) => urls.flatMap(u => [wsv(u), u]);
 
 const KBO_TEAMS = {
   KIA:  { code: "KIA", name: "KIA 타이거즈", color: "#EA002C", textColor: "#fff",
-          logos: [kboEm("HT"), wp("Kia_Tigers_logo.svg"), wp("Kia_Tigers_emblem.svg"), wp("KIA_Tigers_logo.svg"), wpKo("KIA_타이거즈_엠블럼.svg")] },
+          logos: buildLogos(kboEm("HT"), wp("Kia_Tigers_logo.svg"), wp("Kia_Tigers_emblem.svg"), wpKo("KIA_타이거즈_엠블럼.svg")) },
   두산: { code: "두산", name: "두산 베어스", color: "#13294B", textColor: "#fff",
-          logos: [kboEm("OB"), wp("Doosan_Bears_emblem.svg"), wp("Doosan_Bears.svg"), wp("Doosan_Bears_logo.svg"), wpKo("두산_베어스_엠블럼.svg")] },
+          logos: buildLogos(kboEm("OB"), wp("Doosan_Bears_emblem.svg"), wp("Doosan_Bears.svg"), wpKo("두산_베어스_엠블럼.svg")) },
   롯데: { code: "롯데", name: "롯데 자이언츠", color: "#041E42", textColor: "#fff",
-          logos: [kboEm("LT"), wp("Lotte_Giants.svg"), wp("Lotte_Giants_emblem.svg"), wp("Lotte_Giants_logo.svg"), wpKo("롯데_자이언츠_엠블럼.svg")] },
+          logos: buildLogos(kboEm("LT"), wp("Lotte_Giants.svg"), wp("Lotte_Giants_emblem.svg"), wpKo("롯데_자이언츠_엠블럼.svg")) },
   삼성: { code: "삼성", name: "삼성 라이온즈", color: "#074CA1", textColor: "#fff",
-          logos: [kboEm("SS"), wp("Samsung_Lions_emblem.svg"), wp("Samsung_Lions.svg"), wp("Samsung_Lions_logo.svg"), wpKo("삼성_라이온즈_엠블럼.svg")] },
+          logos: buildLogos(kboEm("SS"), wp("Samsung_Lions_emblem.svg"), wp("Samsung_Lions.svg"), wpKo("삼성_라이온즈_엠블럼.svg")) },
   SSG:  { code: "SSG", name: "SSG 랜더스", color: "#CE0E2D", textColor: "#fff",
-          logos: [kboEm("SK"), wp("SSG_Landers_emblem.svg"), wp("SSG_Landers.svg"), wp("SSG_Landers_logo.svg"), wpKo("SSG_랜더스_엠블럼.svg")] },
+          logos: buildLogos(kboEm("SK"), wp("SSG_Landers_emblem.svg"), wp("SSG_Landers.svg"), wpKo("SSG_랜더스_엠블럼.svg")) },
   키움: { code: "키움", name: "키움 히어로즈", color: "#820024", textColor: "#fff",
-          logos: [
-            kboEm("WO"),
-            wp("Kiwoom_Heroes_emblem.svg"),
-            wp("Kiwoom_Heroes.svg"),
-            wp("Kiwoom_Heroes_logo.svg"),
-            wp("Kiwoom_heroes_emblem.svg"),
-            wpKo("키움_히어로즈_엠블럼.svg"),
-            wpKo("키움_히어로즈.svg"),
-            wpKo("Kiwoom_Heroes_emblem.svg"),
-          ] },
+          logos: buildLogos(kboEm("WO"), wp("Kiwoom_Heroes_emblem.svg"), wp("Kiwoom_Heroes.svg"), wp("Kiwoom_Heroes_logo.svg"), wpKo("키움_히어로즈_엠블럼.svg"), wpKo("키움_히어로즈.svg")) },
   한화: { code: "한화", name: "한화 이글스", color: "#FC4E00", textColor: "#fff",
-          logos: [
-            kboEm("HH"),
-            wp("Hanwha_Eagles_emblem.svg"),
-            wp("Hanwha_Eagles.svg"),
-            wp("Hanwha_Eagles_logo.svg"),
-            wp("Hanwha_eagles_emblem.svg"),
-            wpKo("한화_이글스_엠블럼.svg"),
-            wpKo("한화_이글스.svg"),
-            wpKo("Hanwha_Eagles_emblem.svg"),
-          ] },
+          logos: buildLogos(kboEm("HH"), wp("Hanwha_Eagles_emblem.svg"), wp("Hanwha_Eagles.svg"), wp("Hanwha_Eagles_logo.svg"), wpKo("한화_이글스_엠블럼.svg"), wpKo("한화_이글스.svg")) },
   LG:   { code: "LG",  name: "LG 트윈스", color: "#C30452", textColor: "#fff",
-          logos: [kboEm("LG"), wp("LG_Twins.svg"), wp("LG_Twins_logo.svg"), wp("LG_Twins_emblem.svg"), wpKo("LG_트윈스_엠블럼.svg")] },
+          logos: buildLogos(kboEm("LG"), wp("LG_Twins.svg"), wp("LG_Twins_logo.svg"), wpKo("LG_트윈스_엠블럼.svg")) },
   NC:   { code: "NC",  name: "NC 다이노스", color: "#315288", textColor: "#fff",
-          logos: [kboEm("NC"), wp("NC_Dinos_logo.svg"), wp("NC_Dinos.svg"), wp("NC_Dinos_emblem.svg"), wpKo("NC_다이노스_엠블럼.svg")] },
+          logos: buildLogos(kboEm("NC"), wp("NC_Dinos_logo.svg"), wp("NC_Dinos.svg"), wpKo("NC_다이노스_엠블럼.svg")) },
   KT:   { code: "KT",  name: "KT 위즈", color: "#000000", textColor: "#fff",
-          logos: [kboEm("KT"), wp("KT_Wiz_emblem.svg"), wp("KT_Wiz.svg"), wp("KT_Wiz_logo.svg"), wpKo("KT_위즈_엠블럼.svg")] },
+          logos: buildLogos(kboEm("KT"), wp("KT_Wiz_emblem.svg"), wp("KT_Wiz.svg"), wpKo("KT_위즈_엠블럼.svg")) },
 };
 
 const KBO_ALIASES = {
@@ -482,85 +473,29 @@ const wpJa = (filename) => `https://ja.wikipedia.org/wiki/Special:FilePath/${enc
 
 const NPB_TEAMS = {
   Giants:   { code: "巨人",   name: "요미우리 자이언츠",   color: "#F97709", textColor: "#fff",
-              logos: [
-                wp("Yomiuri_Giants_Insignia.svg"), wp("Yomiuri_Giants_insignia.svg"),
-                wp("Yomiuri_Giants_logo.svg"), wp("Yomiuri_Giants.svg"),
-                wpJa("読売ジャイアンツ団章.svg"), wpJa("Yomiuri_Giants_Insignia.svg"),
-              ] },
+              logos: buildLogos(wp("Yomiuri_Giants_Insignia.svg"), wp("Yomiuri_Giants_insignia.svg"), wp("Yomiuri_Giants_logo.svg"), wpJa("読売ジャイアンツ団章.svg")) },
   Tigers:   { code: "阪神",   name: "한신 타이거스",       color: "#FFE201", textColor: "#000",
-              logos: [
-                wp("Hanshin_Tigers_Insignia.svg"), wp("Hanshin_Tigers_insignia.svg"),
-                wp("Hanshin_Tigers_logo.svg"), wp("Hanshin_Tigers.svg"),
-                wpJa("阪神タイガース団章.svg"), wpJa("Hanshin_Tigers_Insignia.svg"),
-              ] },
+              logos: buildLogos(wp("Hanshin_Tigers_Insignia.svg"), wp("Hanshin_Tigers_insignia.svg"), wp("Hanshin_Tigers_logo.svg"), wpJa("阪神タイガース団章.svg")) },
   Swallows: { code: "ヤクルト", name: "야쿠르트 스왈로스",  color: "#00305B", textColor: "#fff",
-              logos: [
-                wp("Tokyo_Yakult_Swallows_Insignia.svg"), wp("Tokyo_Yakult_Swallows_insignia.svg"),
-                wp("Yakult_Swallows_logo.svg"), wp("Tokyo_Yakult_Swallows.svg"),
-                wpJa("東京ヤクルトスワローズ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Tokyo_Yakult_Swallows_Insignia.svg"), wp("Tokyo_Yakult_Swallows_insignia.svg"), wpJa("東京ヤクルトスワローズ団章.svg")) },
   DeNA:     { code: "DeNA",  name: "요코하마 DeNA",       color: "#0055A5", textColor: "#fff",
-              logos: [
-                wp("Yokohama_DeNA_BayStars_Insignia.svg"), wp("Yokohama_DeNA_BayStars_insignia.svg"),
-                wp("Yokohama_DeNA_BayStars_logo.svg"), wp("Yokohama_DeNA_BayStars.svg"),
-                wpJa("横浜DeNAベイスターズ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Yokohama_DeNA_BayStars_Insignia.svg"), wp("Yokohama_DeNA_BayStars_insignia.svg"), wpJa("横浜DeNAベイスターズ団章.svg")) },
   Carp:     { code: "広島",   name: "히로시마 카프",       color: "#FF2A00", textColor: "#fff",
-              logos: [
-                wp("Hiroshima_Toyo_Carp_Insignia.svg"), wp("Hiroshima_Toyo_Carp_insignia.svg"),
-                wp("Hiroshima_Toyo_Carp_logo.svg"), wp("Hiroshima_Toyo_Carp.svg"),
-                wpJa("広島東洋カープ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Hiroshima_Toyo_Carp_Insignia.svg"), wp("Hiroshima_Toyo_Carp_insignia.svg"), wpJa("広島東洋カープ団章.svg")) },
   Dragons:  { code: "中日",   name: "주니치 드래곤즈",     color: "#002569", textColor: "#fff",
-              logos: [
-                wp("Chunichi_Dragons_Insignia.svg"), wp("Chunichi_Dragons_insignia.svg"),
-                wp("Chunichi_Dragons_logo.svg"), wp("Chunichi_Dragons.svg"),
-                wpJa("中日ドラゴンズ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Chunichi_Dragons_Insignia.svg"), wp("Chunichi_Dragons_insignia.svg"), wpJa("中日ドラゴンズ団章.svg")) },
   Hawks:    { code: "SB",    name: "소프트뱅크 호크스",   color: "#FCC800", textColor: "#000",
-              logos: [
-                wp("Fukuoka_SoftBank_Hawks_Insignia.svg"), wp("Fukuoka_SoftBank_Hawks_insignia.svg"),
-                wp("Fukuoka_Softbank_Hawks_Insignia.svg"), wp("Fukuoka_SoftBank_Hawks_logo.svg"),
-                wp("Fukuoka_SoftBank_Hawks.svg"),
-                wpJa("福岡ソフトバンクホークス団章.svg"),
-              ] },
+              logos: buildLogos(wp("Fukuoka_SoftBank_Hawks_Insignia.svg"), wp("Fukuoka_SoftBank_Hawks_insignia.svg"), wp("Fukuoka_Softbank_Hawks_Insignia.svg"), wpJa("福岡ソフトバンクホークス団章.svg")) },
   Lions:    { code: "西武",  name: "세이부 라이온즈",     color: "#002B8E", textColor: "#fff",
-              logos: [
-                wp("Saitama_Seibu_Lions_Insignia.svg"), wp("Saitama_Seibu_Lions_insignia.svg"),
-                wp("Seibu_Lions_logo.svg"), wp("Saitama_Seibu_Lions.svg"),
-                wpJa("埼玉西武ライオンズ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Saitama_Seibu_Lions_Insignia.svg"), wp("Saitama_Seibu_Lions_insignia.svg"), wpJa("埼玉西武ライオンズ団章.svg")) },
   Eagles:   { code: "楽天",  name: "라쿠텐 이글스",       color: "#870010", textColor: "#fff",
-              logos: [
-                wp("Tohoku_Rakuten_Golden_Eagles_Insignia.svg"),
-                wp("Tohoku_Rakuten_Golden_Eagles_insignia.svg"),
-                wp("Tohoku_Rakuten_Golden_Eagles_logo.svg"),
-                wp("Tohoku_Rakuten_Golden_Eagles.svg"),
-                wp("Rakuten_Eagles_logo.svg"),
-                wp("Rakuten_Golden_Eagles_logo.svg"),
-                wpJa("東北楽天ゴールデンイーグルス団章.svg"),
-                wpJa("Tohoku_Rakuten_Golden_Eagles_Insignia.svg"),
-              ] },
+              logos: buildLogos(wp("Tohoku_Rakuten_Golden_Eagles_Insignia.svg"), wp("Tohoku_Rakuten_Golden_Eagles_insignia.svg"), wp("Tohoku_Rakuten_Golden_Eagles_logo.svg"), wpJa("東北楽天ゴールデンイーグルス団章.svg")) },
   Marines:  { code: "ロッテ", name: "롯데 마린스",         color: "#000000", textColor: "#fff",
-              logos: [
-                wp("Chiba_Lotte_Marines_Insignia.svg"), wp("Chiba_Lotte_Marines_insignia.svg"),
-                wp("Chiba_Lotte_Marines_logo.svg"), wp("Chiba_Lotte_Marines.svg"),
-                wpJa("千葉ロッテマリーンズ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Chiba_Lotte_Marines_Insignia.svg"), wp("Chiba_Lotte_Marines_insignia.svg"), wpJa("千葉ロッテマリーンズ団章.svg")) },
   Fighters: { code: "日ハム", name: "닛폰햄 파이터스",     color: "#006699", textColor: "#fff",
-              logos: [
-                wp("Hokkaido_Nippon-Ham_Fighters_Insignia.svg"),
-                wp("Hokkaido_Nippon-Ham_Fighters_insignia.svg"),
-                wp("Nippon-Ham_Fighters_logo.svg"),
-                wp("Hokkaido_Nippon-Ham_Fighters.svg"),
-                wpJa("北海道日本ハムファイターズ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Hokkaido_Nippon-Ham_Fighters_Insignia.svg"), wp("Hokkaido_Nippon-Ham_Fighters_insignia.svg"), wpJa("北海道日本ハムファイターズ団章.svg")) },
   Buffaloes:{ code: "オリックス", name: "오릭스 버팔로스",  color: "#000033", textColor: "#fff",
-              logos: [
-                wp("Orix_Buffaloes_Insignia.svg"), wp("Orix_Buffaloes_insignia.svg"),
-                wp("Orix_Buffaloes_logo.svg"), wp("Orix_Buffaloes.svg"),
-                wpJa("オリックス・バファローズ団章.svg"),
-              ] },
+              logos: buildLogos(wp("Orix_Buffaloes_Insignia.svg"), wp("Orix_Buffaloes_insignia.svg"), wpJa("オリックス・バファローズ団章.svg")) },
 };
 
 const NPB_ALIASES = {
