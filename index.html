@@ -863,14 +863,18 @@ function parseKboLineDetails(line, cls) {
   const player = candidates.find(c => !KBO_STATUS_WORDS.has(c)) || candidates[0] || "—";
 
   // 추가 설명: 팀·선수·포지션·상태 라벨·일반 명사를 제거하고 남은 텍스트
+  // 콤마 구조 보존 → "사유, 부상일수, 휴가일" 형태로 자연스럽게 이어짐
   let desc = clean;
   for (const key of KBO_ALIAS_KEYS) desc = desc.replace(new RegExp(key, "g"), " ");
   if (player && player !== "—") desc = desc.replace(new RegExp(player, "g"), " ");
   if (posMatch) desc = desc.replace(posMatch[0], " ");
   if (cls?.label) desc = desc.replace(new RegExp(cls.label, "g"), " ");
-  desc = desc.replace(/[|/·,]+/g, " ").replace(/\s+/g, " ").trim();
-  // 의미없는 단독 문자(숫자/한글 단어 1자)는 두되, 빈 공간만 제거
-  if (desc.length > 60) desc = desc.slice(0, 60);
+  // 파이프·슬래시·미들닷·탭은 콤마로 통일 (구분자 정규화), 기존 콤마는 유지
+  desc = desc.replace(/\s*[|/·\t]\s*/g, ", ");
+  desc = desc.replace(/\s+/g, " ").trim();
+  // 중복·앞뒤 콤마 정리
+  desc = desc.replace(/(\s*,\s*)+/g, ", ").replace(/^[\s,]+|[\s,]+$/g, "");
+  if (desc.length > 80) desc = desc.slice(0, 80).replace(/,\s*$/, "");
 
   return { player, position, teams, description: desc };
 }
