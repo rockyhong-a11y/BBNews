@@ -647,9 +647,53 @@ function isInRange(isoDate, range) {
 
 /* ============================
  * KBO: koreabaseball.com/Player/Trade.aspx
- *   1차) 스크린샷 + Tesseract.js OCR
- *   2차) HTML 직접 스크래핑 (폴백)
+ *   1차) Jina Reader (r.jina.ai) — JS 렌더링 후 마크다운 반환
+ *   2차) HTML 직접 스크래핑
+ *   3차) 사용자 paste (자동 감지)
  * ============================ */
+
+// Jina Reader: 원격 헤드리스 브라우저로 페이지를 렌더링한 뒤 마크다운으로 반환.
+// 무료·CORS 허용·API 키 불필요. https://r.jina.ai/ 참고.
+async function fetchKboViaJina(range, progressEl) {
+  const targetUrl = "https://www.koreabaseball.com/Player/Trade.aspx";
+  const jinaUrls = [
+    `https://r.jina.ai/${targetUrl}`,
+    `https://r.jina.ai/https://www.koreabaseball.com/Player/Trade.aspx?Year=${new Date().getFullYear()}`,
+  ];
+
+  const setProgress = (txt) => {
+    if (progressEl) progressEl.innerHTML = `<span class="ok"><span class="spinner"></span>${txt}</span>`;
+  };
+
+  let lastErr;
+  for (const jurl of jinaUrls) {
+    try {
+      setProgress("Jina Reader 렌더링 중 (약 5~15초)...");
+      const res = await fetch(jurl, {
+        cache: "no-store",
+        headers: { "Accept": "text/plain", "X-Return-Format": "markdown" },
+      });
+      if (!res.ok) { lastErr = new Error("Jina " + res.status); continue; }
+      const text = await res.text();
+      console.log(`[Jina 응답 첫 1500자] ${jurl}\n`, text.slice(0, 1500));
+
+      // 동일한 줄 단위 파서 재활용 (parseKboOcrText는 paste/OCR 양쪽에 쓰임)
+      const parsed = parseKboOcrText(text, range);
+      if (parsed.stats.datedLines > 0) {
+        return {
+          items: parsed.items,
+          stats: { ...parsed.stats, mode: "jina", responseSize: text.length },
+        };
+      }
+      // 데이터 없으면 다음 URL 시도
+      lastErr = new Error("Jina 응답에 날짜 행 없음");
+    } catch (e) {
+      console.warn("Jina 실패:", jurl, e.message);
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("Jina Reader 실패");
+}
 
 // Tesseract.js lazy load
 let _tesseractPromise = null;
@@ -1156,7 +1200,9 @@ function renderTxRow(tx) {
     ? `${teamBadge(tx.fromTeam)}<span class="tx-arrow">→</span>${teamBadge(tx.toTeam)}`
     : teamBadge(tx.toTeam, { solo: true });
 
-  // 말머리: "{팀명} {선수명}" (트레이드는 "{from→to} {선수명}")
+  // 말머리: 1줄차 = 구단 + 이름
+  // 비-트레이드:  "{팀코드} {선수명}"   예: 키움 브룩스
+  // 트레이드:     "{from} → {to} {선수명}"   예: LG → KIA 홍길동
   const tCode = tx.toTeam?.code || "";
   const fCode = tx.fromTeam?.code || "";
   let header;
@@ -1171,7 +1217,8 @@ function renderTxRow(tx) {
     ? `<a href="${escapeHtml(tx.link)}" target="_blank" rel="noopener">${header}</a>`
     : header;
 
-  // 설명: 번역이 있으면 한글 우선, 원문은 작은 글씨로 첨부 (사유와 중복되면 표시 생략)
+  // 세 줄 구조: 구단+이름 / 상태 / 추가 설명
+  // MLB·NPB는 한글 번역(descriptionKo) 우선, KBO는 원문 description 사용
   const descKo = tx.descriptionKo && tx.descriptionKo !== tx.description ? tx.descriptionKo : null;
   const descMain = descKo || tx.description;
   const descIsDuplicate = descMain && descMain.trim() === tx.typeLabel?.trim();
@@ -1233,30 +1280,55 @@ async function refresh() {
 
   const totals = {};
 
-  // KBO — HTML 스크래핑 자동 실행 (OCR은 부정확하므로 자동 제외)
-  // 데이터가 비면 사용자에게 직접 붙여넣기 안내
-  try {
+  // KBO — 완전 자동 폴백 체인:
+  //   1) Jina Reader (JS 렌더링 → 마크다운)
+  //   2) 직접 HTML 스크래핑
+  //   3) 둘 다 실패 시 사용자 paste 안내
+  {
     const kboStatEl = document.getElementById("src-stat-kbo");
-    const result = await fetchKboTrades(range);
-    if (result.items.length === 0) {
-      // 페이지가 JS 동적 로딩이라 빈 경우 안내 메시지
-      document.getElementById("list-kbo").innerHTML =
-        `<div class="tx-empty">KBO 페이지가 JS 동적 로딩이라 직접 스크래핑이 어렵습니다.<br><br>
-         👉 위의 <b>📋 텍스트 직접 붙여넣기</b>를 펼쳐 KBO 페이지의 표 영역을 복사·붙여넣으세요.</div>`;
-      kboStatEl.innerHTML = `<span class="err">📄 HTML · 데이터 0건 (붙여넣기 권장)</span>`;
-      totals.kbo = 0;
-    } else {
-      renderLeague("kbo", result.items);
-      totals.kbo = result.items.length;
-      document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
-      const s = result.stats;
-      kboStatEl.innerHTML = `<span class="ok">📄 HTML · 테이블 ${s.tables} · 행 ${s.rows} · 날짜行 ${s.dated} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
+    let success = false;
+
+    // ── 1) Jina Reader ──
+    try {
+      const result = await fetchKboViaJina(range, kboStatEl);
+      if (result.items.length > 0 || result.stats.datedLines > 0) {
+        renderLeague("kbo", result.items);
+        totals.kbo = result.items.length;
+        document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
+        const s = result.stats;
+        kboStatEl.innerHTML = `<span class="ok">🤖 Jina Reader · 응답 ${(s.responseSize/1024).toFixed(1)}KB · 행 ${s.ocrLines} · 날짜行 ${s.datedLines} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
+        success = true;
+      }
+    } catch (e) {
+      console.warn("[KBO] Jina 실패 → HTML 스크래핑 시도:", e.message);
     }
-  } catch (e) {
-    console.error("KBO 실패:", e);
-    document.getElementById("list-kbo").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}<br><br>👉 위의 <b>📋 텍스트 직접 붙여넣기</b>를 사용해 주세요.</div>`;
-    document.getElementById("src-stat-kbo").innerHTML = `<span class="err">실패: ${escapeHtml((e.message || "").slice(0,60))}</span>`;
-    totals.kbo = 0;
+
+    // ── 2) HTML 스크래핑 폴백 ──
+    if (!success) {
+      try {
+        const result = await fetchKboTrades(range);
+        if (result.items.length > 0) {
+          renderLeague("kbo", result.items);
+          totals.kbo = result.items.length;
+          document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
+          const s = result.stats;
+          kboStatEl.innerHTML = `<span class="ok">📄 HTML · 테이블 ${s.tables} · 행 ${s.rows} · 날짜行 ${s.dated} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
+          success = true;
+        }
+      } catch (e) {
+        console.warn("[KBO] HTML 스크래핑도 실패:", e.message);
+      }
+    }
+
+    // ── 3) 모두 실패 → paste 안내 ──
+    if (!success) {
+      document.getElementById("list-kbo").innerHTML =
+        `<div class="tx-empty">자동 수집 실패 (Jina + HTML 모두).<br><br>
+         👉 KBO 페이지에서 표 영역을 드래그·복사한 뒤<br>
+         이 페이지 어디든 <b>Ctrl+V (Cmd+V)</b> 누르면 자동 분석됩니다.</div>`;
+      kboStatEl.innerHTML = `<span class="err">자동 수집 실패 → 클립보드 paste 권장</span>`;
+      totals.kbo = 0;
+    }
   }
 
   // MLB (+ 한글 번역)
