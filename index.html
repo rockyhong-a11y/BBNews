@@ -179,25 +179,27 @@
     color: var(--muted); font-size: 14px; margin: 0 2px;
   }
   .team-badge {
-    width: 34px; height: 34px;
-    border-radius: 6px;
+    width: 48px; height: 48px;            /* 44 → 48 살짝 확대 */
+    border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 11px; color: white;
+    font-weight: 800; font-size: 13px;
     flex-shrink: 0;
-    background: var(--border);
-    overflow: hidden;
-    border: 1px solid rgba(255,255,255,0.08);
+    background: #ffffff;                  /* 항상 흰색 배경 */
+    border: 1px solid rgba(0,0,0,0.08);
+    overflow: hidden;                     /* 확대 시 가장자리 트림 */
     text-align: center;
     line-height: 1.1;
-    padding: 2px;
+    padding: 0;
     letter-spacing: -0.5px;
-    /* 텍스트 폴백 시 1~3자 한글/한자가 잘 보이도록 */
   }
-  .team-badge.solo { font-size: 11px; }
+  .team-badge.solo { font-size: 13px; }
   .team-badge img {
     width: 100%; height: 100%;
     object-fit: contain;
-    /* 흰 배경·패딩 제거 → 로고가 팀 컬러 위에 꽉 차게 표시 */
+    object-position: center;
+    /* 로고를 정중앙에서 크게 확대 — 캔버스 여백 영역을 자르고 콘텐츠를 키움 */
+    transform: scale(1.35);
+    transform-origin: center center;
     font-size: 0; color: transparent;
   }
 
@@ -1241,13 +1243,13 @@ window.__fallbackLogo = function(img) {
 };
 
 function teamBadge(team, opts = {}) {
-  if (!team) return `<span class="team-badge" style="background:#475569" title="—">—</span>`;
+  if (!team) return `<span class="team-badge" title="—" style="color:#94a3b8">—</span>`;
   const cls = opts.solo ? "team-badge solo" : "team-badge";
-  const style = `background:${team.color};color:${team.textColor || "#fff"}`;
+  // 배경은 항상 흰색 (CSS), inline에는 팀 컬러를 텍스트 폴백용으로만 지정
+  const style = `color:${team.color}`;
   const logos = team.logos || (team.logo ? [team.logo] : []);
   if (logos.length > 0) {
     const logosJson = JSON.stringify(logos).replace(/"/g, "&quot;");
-    // referrerpolicy=no-referrer: hotlink 차단(특히 koreabaseball.com)을 우회
     return `<span class="${cls}" style="${style}" title="${escapeHtml(team.name)}">` +
            `<img src="${escapeHtml(logos[0])}" data-logos="${logosJson}" data-idx="0" ` +
            `referrerpolicy="no-referrer" loading="eager" ` +
