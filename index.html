@@ -132,6 +132,11 @@
     border: 1px solid var(--border);
   }
   .paste-actions button:hover { transform: translateY(-1px); }
+  .paste-hint {
+    padding: 6px 18px 10px; font-size: 11px;
+    color: var(--accent); background: rgba(56, 189, 248, 0.08);
+    border-top: 1px solid var(--border);
+  }
 
   .tx-list {
     flex: 1; overflow-y: auto; max-height: 78vh;
@@ -160,8 +165,8 @@
     padding: 10px 18px;
     border-bottom: 1px solid rgba(255,255,255,0.04);
     display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 10px; align-items: center;
+    grid-template-columns: auto 1fr;
+    gap: 12px; align-items: center;
   }
   .tx-row:last-child { border-bottom: 0; }
   .tx-row:hover { background: rgba(255,255,255,0.02); }
@@ -194,14 +199,35 @@
 
   .tx-info { min-width: 0; }
   .tx-player {
-    font-weight: 600; font-size: 14px;
+    font-weight: 700; font-size: 14px;
     color: var(--text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tx-player a { color: inherit; text-decoration: none; }
   .tx-player a:hover { color: var(--accent); }
+  .tx-player .team-name {
+    color: var(--muted); font-weight: 600; margin-right: 4px;
+  }
+  .tx-reason {
+    margin-top: 3px;
+    font-size: 12px; font-weight: 600;
+  }
+  .tx-reason[data-type="trade"]    { color: var(--t-trade); }
+  .tx-reason[data-type="signed"],
+  .tx-reason[data-type="selected"],
+  .tx-reason[data-type="recalled"],
+  .tx-reason[data-type="returned"] { color: var(--t-signed); }
+  .tx-reason[data-type="waiver"]   { color: var(--t-waiver); }
+  .tx-reason[data-type="dfa"],
+  .tx-reason[data-type="released"],
+  .tx-reason[data-type="outright"],
+  .tx-reason[data-type="optioned"],
+  .tx-reason[data-type="sent"]     { color: var(--t-released); }
+  .tx-reason[data-type="retired"]  { color: var(--t-retired); }
+  .tx-reason[data-type="il"],
+  .tx-reason[data-type="status"]   { color: var(--t-il); }
   .tx-desc {
-    font-size: 12px; color: #cbd5e1;
+    font-size: 11px; color: #94a3b8;
     margin-top: 3px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -301,8 +327,10 @@
 2026-05-14  부상자 명단  두산  김철수"></textarea>
         <div class="paste-actions">
           <button id="kbo-paste-parse">분석 → 시각화</button>
+          <button id="kbo-paste-clipboard" class="secondary">📥 클립보드에서 가져오기</button>
           <button id="kbo-paste-clear" class="secondary">지우기</button>
         </div>
+        <div class="paste-hint">💡 KBO 페이지에서 표 영역을 드래그·복사한 뒤 이 페이지 어디에서나 Ctrl+V (Cmd+V) 누르면 자동으로 분석됩니다.</div>
       </details>
     </div>
     <div class="tx-list" id="list-kbo"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
@@ -1128,13 +1156,26 @@ function renderTxRow(tx) {
     ? `${teamBadge(tx.fromTeam)}<span class="tx-arrow">→</span>${teamBadge(tx.toTeam)}`
     : teamBadge(tx.toTeam, { solo: true });
 
+  // 말머리: "{팀명} {선수명}" (트레이드는 "{from→to} {선수명}")
+  const tCode = tx.toTeam?.code || "";
+  const fCode = tx.fromTeam?.code || "";
+  let header;
+  if (tx.type === "trade" && fCode && tCode) {
+    header = `<span class="team-name">${escapeHtml(fCode)} → ${escapeHtml(tCode)}</span>${escapeHtml(tx.player)}`;
+  } else if (tCode) {
+    header = `<span class="team-name">${escapeHtml(tCode)}</span>${escapeHtml(tx.player)}`;
+  } else {
+    header = escapeHtml(tx.player);
+  }
   const playerHtml = tx.link
-    ? `<a href="${escapeHtml(tx.link)}" target="_blank" rel="noopener">${escapeHtml(tx.player)}</a>`
-    : escapeHtml(tx.player);
+    ? `<a href="${escapeHtml(tx.link)}" target="_blank" rel="noopener">${header}</a>`
+    : header;
 
-  // 번역이 있으면 한글을 메인으로, 원문은 작은 글씨로 첨부
+  // 설명: 번역이 있으면 한글 우선, 원문은 작은 글씨로 첨부 (사유와 중복되면 표시 생략)
   const descKo = tx.descriptionKo && tx.descriptionKo !== tx.description ? tx.descriptionKo : null;
   const descMain = descKo || tx.description;
+  const descIsDuplicate = descMain && descMain.trim() === tx.typeLabel?.trim();
+  const showDesc = descMain && !descIsDuplicate;
   const descOrig = descKo ? `<div class="tx-desc-orig" title="${escapeHtml(tx.description)}">${escapeHtml(tx.description)}</div>` : "";
 
   return `
@@ -1142,10 +1183,10 @@ function renderTxRow(tx) {
       <div class="tx-teams">${teamsHtml}</div>
       <div class="tx-info">
         <div class="tx-player">${playerHtml}</div>
-        ${descMain ? `<div class="tx-desc" title="${escapeHtml(descMain)}">${escapeHtml(descMain)}</div>` : ""}
+        <div class="tx-reason" data-type="${tx.type}">${escapeHtml(tx.typeLabel)}</div>
+        ${showDesc ? `<div class="tx-desc" title="${escapeHtml(descMain)}">${escapeHtml(descMain)}</div>` : ""}
         ${descOrig}
       </div>
-      <span class="tx-type" data-type="${tx.type}">${escapeHtml(tx.typeLabel)}</span>
     </div>
   `;
 }
@@ -1278,28 +1319,77 @@ function parseKboPastedText(rawText, range) {
   };
 }
 
-document.getElementById("kbo-paste-parse").addEventListener("click", () => {
-  const text = document.getElementById("kbo-paste").value || "";
-  if (!text.trim()) {
-    showToast("붙여넣은 텍스트가 비어있습니다.");
-    return;
-  }
+function runKboPaste(text, source = "붙여넣기") {
   const range = getRange();
   const kboStatEl = document.getElementById("src-stat-kbo");
   try {
     const { items, stats } = parseKboPastedText(text, range);
     renderLeague("kbo", items);
     document.getElementById("count-kbo").textContent = `${items.length}건 (최근 7일)`;
-    kboStatEl.innerHTML = `<span class="ok">📋 붙여넣기 · 행 ${stats.ocrLines} · 날짜行 ${stats.datedLines} · 추출 ${stats.extracted} → 7일내 ${items.length}</span>`;
-    showToast(`KBO 붙여넣기 분석 완료 · ${items.length}건`);
+    kboStatEl.innerHTML = `<span class="ok">📋 ${source} · 행 ${stats.ocrLines} · 날짜行 ${stats.datedLines} · 추출 ${stats.extracted} → 7일내 ${items.length}</span>`;
+    showToast(`KBO ${source} 분석 완료 · ${items.length}건`);
   } catch (e) {
-    console.error("KBO 붙여넣기 파싱 실패:", e);
+    console.error("KBO 파싱 실패:", e);
     kboStatEl.innerHTML = `<span class="err">파싱 실패: ${escapeHtml(e.message || "")}</span>`;
   }
+}
+
+document.getElementById("kbo-paste-parse").addEventListener("click", () => {
+  const text = document.getElementById("kbo-paste").value || "";
+  if (!text.trim()) { showToast("붙여넣은 텍스트가 비어있습니다."); return; }
+  runKboPaste(text, "수동 붙여넣기");
 });
 
 document.getElementById("kbo-paste-clear").addEventListener("click", () => {
   document.getElementById("kbo-paste").value = "";
+});
+
+// 📥 클립보드에서 직접 읽기 (Clipboard API · 권한 필요)
+document.getElementById("kbo-paste-clipboard").addEventListener("click", async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) {
+      showToast("클립보드가 비어있습니다."); return;
+    }
+    document.getElementById("kbo-paste").value = text;
+    document.querySelector(".paste-wrap details").open = true;
+    runKboPaste(text, "클립보드");
+  } catch (e) {
+    showToast("클립보드 접근 권한이 거부되었습니다. Ctrl+V로 직접 붙여넣어 주세요.");
+    console.warn("Clipboard read failed:", e);
+  }
+});
+
+// 자동 감지: KBO 트랜잭션 데이터로 보이는지 휴리스틱 판정
+function looksLikeKboData(text) {
+  if (!text || text.length < 15) return false;
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 1) return false;
+  let dateCount = 0, teamCount = 0;
+  for (const line of lines) {
+    if (parseDateToISO(line, new Date().getFullYear())) dateCount++;
+    if (matchKboTeamsInText(line).length > 0) teamCount++;
+  }
+  // 최소 1개 줄에 날짜 + 최소 1개 줄에 KBO 팀명이면 KBO 데이터로 판정
+  return dateCount >= 1 && teamCount >= 1;
+}
+
+// 전역 paste 리스너: 페이지 어디서나 Ctrl+V → KBO 데이터면 자동 분석
+document.addEventListener("paste", (e) => {
+  // textarea/input 안이면 그대로 통과 (기본 paste 동작 유지)
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "textarea" || tag === "input") return;
+
+  const text = (e.clipboardData || window.clipboardData)?.getData("text") || "";
+  if (!looksLikeKboData(text)) return;
+
+  e.preventDefault();
+  const ta = document.getElementById("kbo-paste");
+  ta.value = text;
+  // 섹션 자동 펼치기
+  const details = document.querySelector(".paste-wrap details");
+  if (details) details.open = true;
+  runKboPaste(text, "자동감지");
 });
 
 document.getElementById("refreshBtn").addEventListener("click", refresh);
