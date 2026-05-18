@@ -834,6 +834,47 @@ function stripDateFromText(text) {
     .replace(/\s+/g, " ").trim();
 }
 
+// 상태/구분 관련 일반 명사 — 선수명 후보에서 제외
+const KBO_STATUS_WORDS = new Set([
+  "트레이드","웨이버","방출","은퇴","복귀","이적","계약","등록","말소","공시","이동",
+  "선수","명단","탈퇴","임의","해지","변경","보류","치료","재활","부상","외국인","용병",
+  "교체","드래프트","보상","해외","군대","개명","경조","휴가","활동","정지","자격","취득"
+]);
+
+// 포지션 키워드 (괄호 안에 들어있을 때 매칭)
+const KBO_POS_RE = /(투수|포수|타자|좌투|우투|외야수|내야수|좌익수|우익수|중견수|1루수|2루수|3루수|유격수|지명타자|선발|마무리|불펜|좌완|우완)/;
+
+function parseKboLineDetails(line, cls) {
+  const teams = matchKboTeamsInText(line);
+  let clean = stripDateFromText(line);
+
+  // 포지션 추출 (괄호 안)
+  let position = null;
+  const posMatch = clean.match(/\(([^)]{1,12})\)/);
+  if (posMatch && KBO_POS_RE.test(posMatch[1])) position = posMatch[1].trim();
+
+  // 선수명 추출용: 팀명 제거한 텍스트에서 한글 2~4자 후보
+  let cleanForPlayer = clean;
+  for (const key of KBO_ALIAS_KEYS) {
+    cleanForPlayer = cleanForPlayer.replace(new RegExp(key, "g"), " ");
+  }
+  const candidates = cleanForPlayer.match(/[가-힣]{2,4}/g) || [];
+  // 상태 관련 단어 제외
+  const player = candidates.find(c => !KBO_STATUS_WORDS.has(c)) || candidates[0] || "—";
+
+  // 추가 설명: 팀·선수·포지션·상태 라벨·일반 명사를 제거하고 남은 텍스트
+  let desc = clean;
+  for (const key of KBO_ALIAS_KEYS) desc = desc.replace(new RegExp(key, "g"), " ");
+  if (player && player !== "—") desc = desc.replace(new RegExp(player, "g"), " ");
+  if (posMatch) desc = desc.replace(posMatch[0], " ");
+  if (cls?.label) desc = desc.replace(new RegExp(cls.label, "g"), " ");
+  desc = desc.replace(/[|/·,]+/g, " ").replace(/\s+/g, " ").trim();
+  // 의미없는 단독 문자(숫자/한글 단어 1자)는 두되, 빈 공간만 제거
+  if (desc.length > 60) desc = desc.slice(0, 60);
+
+  return { player, position, teams, description: desc };
+}
+
 function parseKboOcrText(text, range) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 3);
   const items = [];
@@ -845,24 +886,19 @@ function parseKboOcrText(text, range) {
     if (!date) continue;
     stats.datedLines++;
 
-    const teams = matchKboTeamsInText(line);
     const cls = classifyKboLine(line);
+    const det = parseKboLineDetails(line, cls);
 
-    // 선수명 추출: 날짜·팀명 제거 후 한글 2~4자
-    let clean = stripDateFromText(line);
-    for (const key of KBO_ALIAS_KEYS) {
-      clean = clean.replace(new RegExp(key, "g"), " ");
-    }
-    const playerCandidates = clean.match(/[가-힣]{2,4}/g) || [];
-    const player = playerCandidates[0] || "—";
+    // 1줄차에 표시될 선수명: "이름(포지션)"
+    const playerWithPos = det.position ? `${det.player}(${det.position})` : det.player;
 
-    // 트레이드만 from→to 2팀, 나머지는 단일 팀 (toTeam만 사용)
+    // 트레이드만 from→to 2팀, 나머지는 단일 팀
     let fromTeam = null, toTeam = null;
     if (cls.type === "trade") {
-      fromTeam = teams[0] || null;
-      toTeam = teams[1] || teams[0] || null;
+      fromTeam = det.teams[0] || null;
+      toTeam = det.teams[1] || det.teams[0] || null;
     } else {
-      toTeam = teams[0] || null;
+      toTeam = det.teams[0] || null;
     }
 
     items.push({
@@ -870,10 +906,10 @@ function parseKboOcrText(text, range) {
       date,
       type: cls.type,
       typeLabel: cls.label,
-      player,
+      player: playerWithPos,
       fromTeam,
       toTeam,
-      description: stripDateFromText(line).slice(0, 200),
+      description: det.description,
       link: "https://www.koreabaseball.com/Player/Trade.aspx",
     });
     stats.extracted++;
@@ -1217,21 +1253,37 @@ function renderTxRow(tx) {
     ? `<a href="${escapeHtml(tx.link)}" target="_blank" rel="noopener">${header}</a>`
     : header;
 
-  // 세 줄 구조: 구단+이름 / 상태 / 추가 설명
-  // MLB·NPB는 한글 번역(descriptionKo) 우선, KBO는 원문 description 사용
-  const descKo = tx.descriptionKo && tx.descriptionKo !== tx.description ? tx.descriptionKo : null;
-  const descMain = descKo || tx.description;
-  const descIsDuplicate = descMain && descMain.trim() === tx.typeLabel?.trim();
-  const showDesc = descMain && !descIsDuplicate;
-  const descOrig = descKo ? `<div class="tx-desc-orig" title="${escapeHtml(tx.description)}">${escapeHtml(tx.description)}</div>` : "";
+  // KBO는 2줄: "구단 이름(포지션)" / "상태, 추가정보"
+  // MLB·NPB는 3줄: 구단+이름 / 상태 / 번역된 설명 (+원문)
+  const isKbo = tx.league === "kbo";
+
+  let reasonLine = tx.typeLabel || "";
+  let descLine = "", descOrig = "";
+
+  if (isKbo) {
+    // 상태와 추가설명을 한 줄로 합침: "부상자 명단, 10일"
+    if (tx.description && tx.description.trim() && tx.description.trim() !== tx.typeLabel?.trim()) {
+      reasonLine = `${tx.typeLabel}, ${tx.description}`;
+    }
+  } else {
+    const descKo = tx.descriptionKo && tx.descriptionKo !== tx.description ? tx.descriptionKo : null;
+    const descMain = descKo || tx.description;
+    const descIsDuplicate = descMain && descMain.trim() === tx.typeLabel?.trim();
+    if (descMain && !descIsDuplicate) {
+      descLine = `<div class="tx-desc" title="${escapeHtml(descMain)}">${escapeHtml(descMain)}</div>`;
+    }
+    if (descKo) {
+      descOrig = `<div class="tx-desc-orig" title="${escapeHtml(tx.description)}">${escapeHtml(tx.description)}</div>`;
+    }
+  }
 
   return `
     <div class="tx-row">
       <div class="tx-teams">${teamsHtml}</div>
       <div class="tx-info">
         <div class="tx-player">${playerHtml}</div>
-        <div class="tx-reason" data-type="${tx.type}">${escapeHtml(tx.typeLabel)}</div>
-        ${showDesc ? `<div class="tx-desc" title="${escapeHtml(descMain)}">${escapeHtml(descMain)}</div>` : ""}
+        <div class="tx-reason" data-type="${tx.type}">${escapeHtml(reasonLine)}</div>
+        ${descLine}
         ${descOrig}
       </div>
     </div>
