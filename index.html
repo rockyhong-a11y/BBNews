@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이적·등록 통합 대시보드 (KBO · MLB · NPB)</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #273449;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --kbo: #ef4444;
+    --mlb: #3b82f6;
+    --npb: #f59e0b;
+    --t-trade: #22c55e;
+    --t-signed: #3b82f6;
+    --t-waiver: #06b6d4;
+    --t-released: #f59e0b;
+    --t-retired: #64748b;
+    --t-il: #f43f5e;
+    --error: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 19px; flex: 0 0 auto; }
+  header .controls { display: flex; gap: 10px; align-items: center; flex: 1; flex-wrap: wrap; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  header .week-tag {
+    background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--accent); padding: 4px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+  }
+  button.refresh {
+    background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff;
+    border: 0; padding: 10px 18px; border-radius: 8px;
+    font-weight: 600; cursor: pointer; font-size: 14px;
+    transition: transform 0.1s, opacity 0.2s;
+  }
+  button.refresh:hover { transform: translateY(-1px); }
+  button.refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  main {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 20px; padding: 20px 24px 40px;
+  }
+  @media (max-width: 1400px) { main { grid-template-columns: 1fr; } }
+
+  .league {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    display: flex; flex-direction: column;
+    min-height: 200px;
+  }
+  .league > h2 {
+    margin: 0; padding: 14px 18px; font-size: 18px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .league > h2 .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .league[data-league="kbo"] h2 .dot { background: var(--kbo); }
+  .league[data-league="mlb"] h2 .dot { background: var(--mlb); }
+  .league[data-league="npb"] h2 .dot { background: var(--npb); }
+  .league .count { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: normal; }
+  .league .src-info {
+    padding: 8px 18px; font-size: 11px; color: var(--muted);
+    background: rgba(0,0,0,0.15); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  }
+  .league .src-info b { color: var(--text); font-weight: 600; }
+  .league .src-info .err { color: var(--error); }
+  .league .src-info .ok { color: #4ade80; }
+
+  .tx-list {
+    flex: 1; overflow-y: auto; max-height: 78vh;
+  }
+  .tx-list::-webkit-scrollbar { width: 8px; }
+  .tx-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .tx-empty, .tx-loading, .tx-error {
+    padding: 30px 20px; text-align: center; color: var(--muted); font-size: 13px;
+  }
+  .tx-error { color: var(--error); }
+
+  .date-group { border-bottom: 1px solid var(--border); }
+  .date-group:last-child { border-bottom: 0; }
+  .date-header {
+    position: sticky; top: 0; z-index: 2;
+    padding: 8px 18px; font-size: 12px; font-weight: 700;
+    color: var(--accent); background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .date-header .day-count {
+    margin-left: auto; color: var(--muted); font-weight: normal;
+  }
+
+  .tx-row {
+    padding: 10px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px; align-items: center;
+  }
+  .tx-row:last-child { border-bottom: 0; }
+  .tx-row:hover { background: rgba(255,255,255,0.02); }
+
+  .tx-teams {
+    display: flex; align-items: center; gap: 4px;
+    flex: 0 0 auto;
+  }
+  .tx-arrow {
+    color: var(--muted); font-size: 14px; margin: 0 2px;
+  }
+  .team-badge {
+    width: 34px; height: 34px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 10px; color: white;
+    flex-shrink: 0;
+    background: var(--border);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .team-badge.solo { font-size: 11px; }
+  .team-badge img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    background: white;
+    padding: 2px;
+    border-radius: 4px;
+  }
+
+  .tx-info { min-width: 0; }
+  .tx-player {
+    font-weight: 600; font-size: 14px;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tx-player a { color: inherit; text-decoration: none; }
+  .tx-player a:hover { color: var(--accent); }
+  .tx-desc {
+    font-size: 12px; color: #cbd5e1;
+    margin-top: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tx-desc-orig {
+    font-size: 11px; color: #64748b; font-style: italic;
+    margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .tx-type {
+    font-size: 11px; font-weight: 700;
+    padding: 4px 10px; border-radius: 4px;
+    color: white; flex-shrink: 0;
+    letter-spacing: 0.02em;
+    background: var(--muted);
+  }
+  .tx-type[data-type="trade"]    { background: var(--t-trade); }
+  .tx-type[data-type="signed"],
+  .tx-type[data-type="selected"],
+  .tx-type[data-type="recalled"],
+  .tx-type[data-type="returned"] { background: var(--t-signed); }
+  .tx-type[data-type="waiver"]   { background: var(--t-waiver); }
+  .tx-type[data-type="dfa"],
+  .tx-type[data-type="released"],
+  .tx-type[data-type="outright"],
+  .tx-type[data-type="optioned"],
+  .tx-type[data-type="sent"]     { background: var(--t-released); }
+  .tx-type[data-type="retired"]  { background: var(--t-retired); }
+  .tx-type[data-type="il"],
+  .tx-type[data-type="status"]   { background: var(--t-il); }
+
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 10px 16px; border-radius: 8px; font-size: 13px;
+    color: var(--text); box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    opacity: 0; transition: opacity 0.3s; max-width: 360px;
+  }
+  .toast.show { opacity: 1; }
+
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--muted); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Legend */
+  .legend {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    padding: 6px 0; font-size: 11px; color: var(--muted);
+  }
+  .legend span {
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .legend i {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚾ 이적·등록 통합 대시보드</h1>
+  <div class="controls">
+    <button class="refresh" id="refreshBtn">🔄 리그 통합 갱신</button>
+    <span class="week-tag" id="weekTag">최근 7일</span>
+    <span class="meta" id="lastUpdated">아직 갱신되지 않음</span>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--t-trade)"></i>트레이드</span>
+    <span><i style="background:var(--t-signed)"></i>신규/콜업</span>
+    <span><i style="background:var(--t-waiver)"></i>웨이버</span>
+    <span><i style="background:var(--t-released)"></i>방출/DFA</span>
+    <span><i style="background:var(--t-retired)"></i>은퇴</span>
+    <span><i style="background:var(--t-il)"></i>부상자명단</span>
+  </div>
+</header>
+
+<main>
+  <section class="league" data-league="kbo">
+    <h2><span class="dot"></span>KBO 한국프로야구<span class="count" id="count-kbo">0건</span></h2>
+    <div class="src-info">
+      <span>소스: <b>koreabaseball.com/Player/Trade.aspx</b></span>
+      <span id="src-stat-kbo"></span>
+    </div>
+    <div class="tx-list" id="list-kbo"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
+  </section>
+
+  <section class="league" data-league="mlb">
+    <h2><span class="dot"></span>MLB 메이저리그<span class="count" id="count-mlb">0건</span></h2>
+    <div class="src-info">
+      <span>소스: <b>mlb.com/transactions (Stats API)</b></span>
+      <span id="src-stat-mlb"></span>
+    </div>
+    <div class="tx-list" id="list-mlb"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
+  </section>
+
+  <section class="league" data-league="npb">
+    <h2><span class="dot"></span>NPB 일본프로야구<span class="count" id="count-npb">0건</span></h2>
+    <div class="src-info">
+      <span>소스: <b>npb.jp/announcement/ (4 페이지)</b></span>
+      <span id="src-stat-npb"></span>
+    </div>
+    <div class="tx-list" id="list-npb"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+ * 이적·등록 통합 대시보드 v5
+ *   - 뉴스 수집 모두 제거
+ *   - KBO: koreabaseball.com/Player/Trade.aspx (트레이드 공식)
+ *   - MLB: mlb.com/transactions (Stats API)
+ *   - NPB: npb.jp/announcement/{year}/pn_*.html (4페이지)
+ *   - 날짜별 그룹화 + 팀 로고/뱃지 시각화
+ *   - 범위: 현재일 D 기준 D-7 ~ D
+ * ========================================================= */
+
+/* ============================
+ * 팀 정보 사전
+ * ============================ */
+
+// KBO canonical 팀 데이터 + 별칭 매핑
+// Wikipedia Special:FilePath URL은 파일 경로 해시 없이 안정적 (자동 리다이렉트)
+const wp = (filename, lang = "en") => `https://${lang}.wikipedia.org/wiki/Special:FilePath/${encodeURIComponent(filename)}`;
+
+const KBO_TEAMS = {
+  KIA:  { code: "KIA", name: "KIA 타이거즈", color: "#EA002C", textColor: "#fff",
+          logos: [wp("Kia_Tigers_logo.svg"), "https://www.koreabaseball.com/images/emblem/regular/HT.png"] },
+  두산: { code: "두산", name: "두산 베어스", color: "#13294B", textColor: "#fff",
+          logos: [wp("Doosan_Bears_emblem.svg"), wp("Doosan_Bears.svg"), "https://www.koreabaseball.com/images/emblem/regular/OB.png"] },
+  롯데: { code: "롯데", name: "롯데 자이언츠", color: "#041E42", textColor: "#fff",
+          logos: [wp("Lotte_Giants.svg"), wp("Lotte_Giants_emblem.svg"), "https://www.koreabaseball.com/images/emblem/regular/LT.png"] },
+  삼성: { code: "삼성", name: "삼성 라이온즈", color: "#074CA1", textColor: "#fff",
+          logos: [wp("Samsung_Lions_emblem.svg"), wp("Samsung_Lions_Insignia.svg"), "https://www.koreabaseball.com/images/emblem/regular/SS.png"] },
+  SSG:  { code: "SSG", name: "SSG 랜더스", color: "#CE0E2D", textColor: "#fff",
+          logos: [wp("SSG_Landers_Insignia.svg"), wp("SSG_Landers_emblem.svg"), "https://www.koreabaseball.com/images/emblem/regular/SK.png"] },
+  키움: { code: "키움", name: "키움 히어로즈", color: "#820024", textColor: "#fff",
+          logos: [wp("Kiwoom_Heroes_emblem.svg"), wp("Kiwoom_Heroes.svg"), "https://www.koreabaseball.com/images/emblem/regular/WO.png"] },
+  한화: { code: "한화", name: "한화 이글스", color: "#FC4E00", textColor: "#fff",
+          logos: [wp("Hanwha_Eagles_logo.svg"), wp("Hanwha_Eagles.svg"), "https://www.koreabaseball.com/images/emblem/regular/HH.png"] },
+  LG:   { code: "LG",  name: "LG 트윈스", color: "#C30452", textColor: "#fff",
+          logos: [wp("LG_Twins.svg"), wp("LG_Twins_logo.svg"), "https://www.koreabaseball.com/images/emblem/regular/LG.png"] },
+  NC:   { code: "NC",  name: "NC 다이노스", color: "#315288", textColor: "#fff",
+          logos: [wp("NC_Dinos_logo.svg"), wp("NC_Dinos_Insignia.svg"), "https://www.koreabaseball.com/images/emblem/regular/NC.png"] },
+  KT:   { code: "KT",  name: "KT 위즈", color: "#000000", textColor: "#fff",
+          logos: [wp("KT_Wiz_emblem.svg"), wp("KT_Wiz_logo.svg"), "https://www.koreabaseball.com/images/emblem/regular/KT.png"] },
+};
+
+const KBO_ALIASES = {
+  "KIA": "KIA", "기아": "KIA", "타이거즈": "KIA",
+  "두산": "두산", "베어스": "두산",
+  "롯데": "롯데", "자이언츠": "롯데",
+  "삼성": "삼성", "라이온즈": "삼성",
+  "SSG": "SSG", "랜더스": "SSG", "에스에스지": "SSG",
+  "키움": "키움", "히어로즈": "키움",
+  "한화": "한화", "이글스": "한화",
+  "LG": "LG", "엘지": "LG", "트윈스": "LG",
+  "NC": "NC", "엔씨": "NC", "다이노스": "NC",
+  "KT": "KT", "케이티": "KT", "위즈": "KT",
+};
+
+// MLB 30개 구단 - statsapi 팀 ID 기반
+const MLB_TEAM_BY_ID = {
+  108: { code: "LAA", name: "에인절스",   color: "#BA0021", textColor: "#fff" },
+  109: { code: "ARI", name: "다이아몬드백스", color: "#A71930", textColor: "#fff" },
+  110: { code: "BAL", name: "오리올스",   color: "#DF4601", textColor: "#fff" },
+  111: { code: "BOS", name: "레드삭스",   color: "#BD3039", textColor: "#fff" },
+  112: { code: "CHC", name: "컵스",       color: "#0E3386", textColor: "#fff" },
+  113: { code: "CIN", name: "레즈",       color: "#C6011F", textColor: "#fff" },
+  114: { code: "CLE", name: "가디언스",   color: "#0C2340", textColor: "#fff" },
+  115: { code: "COL", name: "로키스",     color: "#33006F", textColor: "#fff" },
+  116: { code: "DET", name: "타이거스",   color: "#0C2340", textColor: "#fff" },
+  117: { code: "HOU", name: "애스트로스", color: "#002D62", textColor: "#fff" },
+  118: { code: "KC",  name: "로열스",     color: "#004687", textColor: "#fff" },
+  119: { code: "LAD", name: "다저스",     color: "#005A9C", textColor: "#fff" },
+  120: { code: "WSH", name: "내셔널스",   color: "#AB0003", textColor: "#fff" },
+  121: { code: "NYM", name: "메츠",       color: "#002D72", textColor: "#fff" },
+  133: { code: "OAK", name: "애슬레틱스", color: "#003831", textColor: "#fff" },
+  134: { code: "PIT", name: "파이리츠",   color: "#27251F", textColor: "#fff" },
+  135: { code: "SD",  name: "파드리스",   color: "#2F241D", textColor: "#fff" },
+  136: { code: "SEA", name: "매리너스",   color: "#0C2C56", textColor: "#fff" },
+  137: { code: "SF",  name: "자이언츠",   color: "#FD5A1E", textColor: "#fff" },
+  138: { code: "STL", name: "카디널스",   color: "#C41E3A", textColor: "#fff" },
+  139: { code: "TB",  name: "레이스",     color: "#092C5C", textColor: "#fff" },
+  140: { code: "TEX", name: "레인저스",   color: "#003278", textColor: "#fff" },
+  141: { code: "TOR", name: "블루제이스", color: "#134A8E", textColor: "#fff" },
+  142: { code: "MIN", name: "트윈스",     color: "#002B5C", textColor: "#fff" },
+  143: { code: "PHI", name: "필리스",     color: "#E81828", textColor: "#fff" },
+  144: { code: "ATL", name: "브레이브스", color: "#CE1141", textColor: "#fff" },
+  145: { code: "CWS", name: "화이트삭스", color: "#27251F", textColor: "#fff" },
+  146: { code: "MIA", name: "말린스",     color: "#00A3E0", textColor: "#fff" },
+  147: { code: "NYY", name: "양키스",     color: "#003087", textColor: "#fff" },
+  158: { code: "MIL", name: "브루어스",   color: "#12284B", textColor: "#fff" },
+};
+function mlbLogoUrl(id) { return `https://www.mlbstatic.com/team-logos/${id}.svg`; }
+
+// NPB 12개 구단 - canonical 팀 + 별칭
+const NPB_TEAMS = {
+  Giants:   { code: "巨人",   name: "요미우리 자이언츠",   color: "#F97709", textColor: "#fff",
+              logos: [wp("Yomiuri_Giants_Insignia.svg"), wp("Yomiuri_Giants_logo.svg")] },
+  Tigers:   { code: "阪神",   name: "한신 타이거스",       color: "#FFE201", textColor: "#000",
+              logos: [wp("Hanshin_Tigers_Insignia.svg"), wp("Hanshin_Tigers_logo.svg")] },
+  Swallows: { code: "ヤクルト", name: "야쿠르트 스왈로스",  color: "#00305B", textColor: "#fff",
+              logos: [wp("Tokyo_Yakult_Swallows_insignia.svg"), wp("Tokyo_Yakult_Swallows_Insignia.svg")] },
+  DeNA:     { code: "DeNA",  name: "요코하마 DeNA",       color: "#0055A5", textColor: "#fff",
+              logos: [wp("Yokohama_DeNA_BayStars_Insignia.svg"), wp("Yokohama_DeNA_BayStars_insignia.svg")] },
+  Carp:     { code: "広島",   name: "히로시마 카프",       color: "#FF2A00", textColor: "#fff",
+              logos: [wp("Hiroshima_Toyo_Carp_Insignia.svg"), wp("Hiroshima_Toyo_Carp_insignia.svg")] },
+  Dragons:  { code: "中日",   name: "주니치 드래곤즈",     color: "#002569", textColor: "#fff",
+              logos: [wp("Chunichi_Dragons_Insignia.svg"), wp("Chunichi_Dragons_logo.svg")] },
+  Hawks:    { code: "SB",    name: "소프트뱅크 호크스",   color: "#FCC800", textColor: "#000",
+              logos: [wp("Fukuoka_SoftBank_Hawks_Insignia.svg"), wp("Fukuoka_Softbank_Hawks_Insignia.svg")] },
+  Lions:    { code: "西武",  name: "세이부 라이온즈",     color: "#002B8E", textColor: "#fff",
+              logos: [wp("Saitama_Seibu_Lions_insignia.svg"), wp("Saitama_Seibu_Lions_Insignia.svg")] },
+  Eagles:   { code: "楽天",  name: "라쿠텐 이글스",       color: "#870010", textColor: "#fff",
+              logos: [wp("Tohoku_Rakuten_Golden_Eagles_Insignia.svg"), wp("Tohoku_Rakuten_Golden_Eagles_insignia.svg")] },
+  Marines:  { code: "ロッテ", name: "롯데 마린스",         color: "#000000", textColor: "#fff",
+              logos: [wp("Chiba_Lotte_Marines_Insignia.svg"), wp("Chiba_Lotte_Marines_insignia.svg")] },
+  Fighters: { code: "日ハム", name: "닛폰햄 파이터스",     color: "#006699", textColor: "#fff",
+              logos: [wp("Hokkaido_Nippon-Ham_Fighters_Insignia.svg"), wp("Hokkaido_Nippon-Ham_Fighters_insignia.svg")] },
+  Buffaloes:{ code: "オリックス", name: "오릭스 버팔로스",  color: "#000033", textColor: "#fff",
+              logos: [wp("Orix_Buffaloes_Insignia.svg"), wp("Orix_Buffaloes_insignia.svg")] },
+};
+
+const NPB_ALIASES = {
+  "巨人": "Giants", "読売": "Giants", "ジャイアンツ": "Giants", "Giants": "Giants", "読売ジャイアンツ": "Giants",
+  "阪神": "Tigers", "タイガース": "Tigers", "Tigers": "Tigers", "阪神タイガース": "Tigers",
+  "ヤクルト": "Swallows", "東京ヤクルト": "Swallows", "スワローズ": "Swallows", "Swallows": "Swallows",
+  "DeNA": "DeNA", "横浜DeNA": "DeNA", "横浜": "DeNA", "ベイスターズ": "DeNA", "BayStars": "DeNA",
+  "広島": "Carp", "広島東洋": "Carp", "カープ": "Carp", "Carp": "Carp",
+  "中日": "Dragons", "中日ドラゴンズ": "Dragons", "ドラゴンズ": "Dragons", "Dragons": "Dragons",
+  "ソフトバンク": "Hawks", "福岡ソフトバンク": "Hawks", "ホークス": "Hawks", "Hawks": "Hawks",
+  "西武": "Lions", "埼玉西武": "Lions", "ライオンズ": "Lions", "Lions": "Lions",
+  "楽天": "Eagles", "東北楽天": "Eagles", "イーグルス": "Eagles", "Eagles": "Eagles",
+  "ロッテ": "Marines", "千葉ロッテ": "Marines", "マリーンズ": "Marines", "Marines": "Marines",
+  "日本ハム": "Fighters", "北海道日本ハム": "Fighters", "ファイターズ": "Fighters", "Fighters": "Fighters",
+  "オリックス": "Buffaloes", "バファローズ": "Buffaloes", "Buffaloes": "Buffaloes",
+};
+
+// 별칭 키를 길이 내림차순으로 정렬 (긴 별칭 우선 매칭, e.g. "東京ヤクルト" before "ヤクルト")
+const KBO_ALIAS_KEYS = Object.keys(KBO_ALIASES).sort((a, b) => b.length - a.length);
+const NPB_ALIAS_KEYS = Object.keys(NPB_ALIASES).sort((a, b) => b.length - a.length);
+
+function matchKboTeam(text) {
+  if (!text) return null;
+  for (const key of KBO_ALIAS_KEYS) {
+    if (text.includes(key)) return KBO_TEAMS[KBO_ALIASES[key]];
+  }
+  return null;
+}
+function matchKboTeamsInText(text) {
+  if (!text) return [];
+  const found = []; const seen = new Set();
+  for (const key of KBO_ALIAS_KEYS) {
+    if (text.includes(key)) {
+      const teamKey = KBO_ALIASES[key];
+      if (!seen.has(teamKey)) { seen.add(teamKey); found.push(KBO_TEAMS[teamKey]); }
+    }
+  }
+  return found;
+}
+function matchMlbTeam(id) { return MLB_TEAM_BY_ID[id] || null; }
+function matchNpbTeam(text) {
+  if (!text) return null;
+  for (const key of NPB_ALIAS_KEYS) {
+    if (text.includes(key)) return NPB_TEAMS[NPB_ALIASES[key]];
+  }
+  return null;
+}
+
+/* ============================
+ * CORS 프록시
+ * ============================ */
+const PROXIES = [
+  { fn: u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, type: "raw" },
+  { fn: u => `https://corsproxy.io/?${encodeURIComponent(u)}`, type: "raw" },
+  { fn: u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, type: "raw" },
+  { fn: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, type: "json" },
+];
+async function fetchViaProxy(url) {
+  const errs = [];
+  for (const p of PROXIES) {
+    try {
+      const res = await fetch(p.fn(url), { cache: "no-store" });
+      if (!res.ok) { errs.push(res.status); continue; }
+      if (p.type === "json") {
+        const d = await res.json();
+        if (d.contents) return d.contents;
+        continue;
+      }
+      const t = await res.text();
+      if (t && t.length > 80) return t;
+    } catch (e) { errs.push((e.message || "").slice(0, 30)); }
+  }
+  throw new Error("proxy: " + errs.join("|"));
+}
+async function fetchJsonDirectOrProxy(url) {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (res.ok) return await res.json();
+  } catch {}
+  return JSON.parse(await fetchViaProxy(url));
+}
+
+/* ============================
+ * 번역 (MLB 영문 description → 한글)
+ * ============================ */
+const T_CACHE_KEY = "bbnews-tr-v5";
+const tCache = (() => { try { return JSON.parse(localStorage.getItem(T_CACHE_KEY) || "{}"); } catch { return {}; } })();
+function saveTCache() { try { localStorage.setItem(T_CACHE_KEY, JSON.stringify(tCache)); } catch {} }
+
+async function translateOne(text, fromLang) {
+  if (!text || !text.trim()) return text;
+  const key = `${fromLang}::${text}`;
+  if (tCache[key]) return tCache[key];
+  // 1차: Google Translate 비공식
+  try {
+    const u = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromLang}&tl=ko&dt=t&q=${encodeURIComponent(text)}`;
+    const res = await fetch(u);
+    if (res.ok) {
+      const data = await res.json();
+      const out = data[0].map(s => s[0]).join("");
+      tCache[key] = out; saveTCache();
+      return out;
+    }
+  } catch {}
+  // 2차: MyMemory
+  try {
+    const u = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromLang}|ko`;
+    const res = await fetch(u);
+    const data = await res.json();
+    const out = data?.responseData?.translatedText || text;
+    tCache[key] = out; saveTCache();
+    return out;
+  } catch { return text; }
+}
+
+async function translateDescriptionsBatch(items, fromLang, onProgress) {
+  const tasks = items.filter(it => it.description && !it.descriptionKo);
+  let done = 0; let idx = 0;
+  const worker = async () => {
+    while (idx < tasks.length) {
+      const i = idx++;
+      tasks[i].descriptionKo = await translateOne(tasks[i].description, fromLang);
+      done++; onProgress?.(done, tasks.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, tasks.length) }, worker));
+}
+
+/* ============================
+ * 날짜 범위 (D-7 ~ D)
+ * ============================ */
+function getRange() {
+  const now = new Date();
+  const start = new Date(now); start.setDate(now.getDate() - 7); start.setHours(0,0,0,0);
+  const endDay = new Date(now); endDay.setHours(23,59,59,999);
+  return { start, end: new Date(endDay.getTime() + 1) };
+}
+function fmtRange({ start, end }) {
+  const f = d => `${d.getMonth() + 1}/${d.getDate()}`;
+  const last = new Date(end.getTime() - 1);
+  return `최근 ${f(start)} ~ ${f(last)} (D-7 ~ D)`;
+}
+function fmtApiDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function parseDateToISO(s, defaultYear) {
+  if (!s) return null;
+  // 1) 2026.05.18 / 2026-05-18 / 2026/05/18 / 2026年5月18日
+  let m = s.match(/(\d{4})[.\-/年\s]+(\d{1,2})[.\-/月\s]+(\d{1,2})/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`;
+  // 2) 26.05.18 (2자리 연도)
+  m = s.match(/(\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+  if (m) {
+    const y = +m[1] < 70 ? 2000 + +m[1] : 1900 + +m[1];
+    return `${y}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`;
+  }
+  // 3) 5月18日 / 5/18 (연도 없음 → defaultYear)
+  m = s.match(/^\s*(\d{1,2})[月\/](\d{1,2})日?\s*$/);
+  if (m && defaultYear) {
+    return `${defaultYear}-${String(m[1]).padStart(2,"0")}-${String(m[2]).padStart(2,"0")}`;
+  }
+  return null;
+}
+function isInRange(isoDate, range) {
+  if (!isoDate) return false;
+  const d = new Date(isoDate + "T12:00:00");
+  return d >= range.start && d < range.end;
+}
+
+/* ============================
+ * KBO: koreabaseball.com/Player/Trade.aspx
+ *   1차) 스크린샷 + Tesseract.js OCR
+ *   2차) HTML 직접 스크래핑 (폴백)
+ * ============================ */
+
+// Tesseract.js lazy load
+let _tesseractPromise = null;
+function loadTesseract() {
+  if (typeof Tesseract !== "undefined") return Promise.resolve();
+  if (_tesseractPromise) return _tesseractPromise;
+  _tesseractPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Tesseract.js 로드 실패"));
+    document.head.appendChild(s);
+  });
+  return _tesseractPromise;
+}
+
+async function fetchKboViaOCR(range, progressEl) {
+  const targetUrl = "https://www.koreabaseball.com/Player/Trade.aspx";
+
+  // 스크린샷: thum.io 우선, 안되면 mShots
+  const shotUrls = [
+    `https://image.thum.io/get/width/1600/wait/5/png/${targetUrl}`,
+    `https://s.wordpress.com/mshots/v1/${encodeURIComponent(targetUrl)}?w=1600`,
+  ];
+
+  await loadTesseract();
+  if (typeof Tesseract === "undefined") throw new Error("Tesseract.js 미사용 가능");
+
+  const setProgress = (txt) => {
+    if (progressEl) progressEl.innerHTML = `<span class="ok"><span class="spinner"></span>${txt}</span>`;
+  };
+
+  let lastErr;
+  for (const url of shotUrls) {
+    try {
+      setProgress("스크린샷 가져오는 중...");
+      const { data } = await Tesseract.recognize(url, "kor+eng", {
+        logger: m => {
+          if (m.status === "recognizing text") setProgress(`OCR ${Math.round(m.progress * 100)}%`);
+          else if (m.status) setProgress(m.status);
+        }
+      });
+      const text = data.text || "";
+      console.log("[KBO OCR 원본]\n" + text);
+      const parsed = parseKboOcrText(text, range);
+      console.log("[KBO OCR 파싱]", parsed.stats);
+      if (parsed.items.length > 0 || parsed.stats.ocrLines > 5) return parsed;
+    } catch (e) {
+      console.warn("OCR 시도 실패:", url, e.message);
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("OCR 실패");
+}
+
+// KBO 추출 텍스트 → 상태값 분류 (구체적 키워드 우선)
+function classifyKboLine(text) {
+  if (/트레이드|맞트레이드|교환|\d+\s*[:\s]\s*\d+\s*트레이드/.test(text))
+    return { type: "trade", label: "트레이드" };
+  if (/부상자\s*명단|부상자명단|부상자\s*등재|IL\s*등재/i.test(text))
+    return { type: "il", label: "부상자명단" };
+  if (/재활군|재활 군|1군\s*말소|엔트리\s*제외/.test(text))
+    return { type: "il", label: "1군 말소" };
+  if (/약물|도핑|출장정지|출전정지|징계/.test(text))
+    return { type: "il", label: "징계/약물" };
+  if (/자유계약\s*선수|자유계약공시|자유계약 공시|FA\s*공시/.test(text))
+    return { type: "released", label: "자유계약" };
+  if (/웨이버|웨이버 공시|보류명단\s*제외/.test(text))
+    return { type: "waiver", label: "웨이버" };
+  if (/방출/.test(text))
+    return { type: "released", label: "방출" };
+  if (/임의\s*탈퇴|임의탈퇴|임의해지/.test(text))
+    return { type: "released", label: "임의탈퇴" };
+  if (/은퇴/.test(text))
+    return { type: "retired", label: "은퇴" };
+  if (/1군\s*등록|신규\s*등록|콜업|엔트리\s*등록/.test(text))
+    return { type: "selected", label: "신규/콜업" };
+  if (/외국인선수\s*교체|외국인\s*교체|용병\s*교체/.test(text))
+    return { type: "signed", label: "외국인 교체" };
+  if (/영입|입단|사인|재계약|신규\s*계약/.test(text))
+    return { type: "signed", label: "계약" };
+  if (/복귀/.test(text))
+    return { type: "returned", label: "복귀" };
+  return { type: "other", label: "이동" };
+}
+
+// description에서 날짜 패턴 제거
+function stripDateFromText(text) {
+  return text
+    .replace(/\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}\s*일?\.?/g, "")
+    .replace(/\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2}\.?/g, "")
+    .replace(/\s+/g, " ").trim();
+}
+
+function parseKboOcrText(text, range) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 3);
+  const items = [];
+  const currentYear = new Date().getFullYear();
+  const stats = { ocrLines: lines.length, datedLines: 0, extracted: 0 };
+
+  for (const line of lines) {
+    const date = parseDateToISO(line, currentYear);
+    if (!date) continue;
+    stats.datedLines++;
+
+    const teams = matchKboTeamsInText(line);
+    const cls = classifyKboLine(line);
+
+    // 선수명 추출: 날짜·팀명 제거 후 한글 2~4자
+    let clean = stripDateFromText(line);
+    for (const key of KBO_ALIAS_KEYS) {
+      clean = clean.replace(new RegExp(key, "g"), " ");
+    }
+    const playerCandidates = clean.match(/[가-힣]{2,4}/g) || [];
+    const player = playerCandidates[0] || "—";
+
+    // 트레이드만 from→to 2팀, 나머지는 단일 팀 (toTeam만 사용)
+    let fromTeam = null, toTeam = null;
+    if (cls.type === "trade") {
+      fromTeam = teams[0] || null;
+      toTeam = teams[1] || teams[0] || null;
+    } else {
+      toTeam = teams[0] || null;
+    }
+
+    items.push({
+      league: "kbo",
+      date,
+      type: cls.type,
+      typeLabel: cls.label,
+      player,
+      fromTeam,
+      toTeam,
+      description: stripDateFromText(line).slice(0, 200),
+      link: "https://www.koreabaseball.com/Player/Trade.aspx",
+    });
+    stats.extracted++;
+  }
+
+  return { items: items.filter(tx => isInRange(tx.date, range)), stats };
+}
+
+async function fetchKboTrades(range) {
+  const url = "https://www.koreabaseball.com/Player/Trade.aspx";
+  const html = await fetchViaProxy(url);
+  const doc = new DOMParser().parseFromString(html, "text/html");
+
+  const out = [];
+  const stats = { tables: 0, rows: 0, dated: 0, extracted: 0 };
+  const currentYear = new Date().getFullYear();
+
+  // 모든 테이블의 모든 행을 훑어, 어느 셀이든 날짜 패턴이 있으면 데이터 행으로 간주
+  const tables = [...doc.querySelectorAll("table")];
+  stats.tables = tables.length;
+  const sampleRows = [];
+
+  for (const table of tables) {
+    const rows = [...table.querySelectorAll("tr")];
+    for (const row of rows) {
+      stats.rows++;
+      const cells = [...row.querySelectorAll("td, th")].map(c =>
+        c.textContent.replace(/\s+/g, " ").trim()
+      );
+      if (cells.length < 2) continue;
+      if (sampleRows.length < 3) sampleRows.push(cells);
+
+      // 어느 셀에서든 날짜 추출
+      let date = null, dateIdx = -1;
+      for (let i = 0; i < cells.length; i++) {
+        const iso = parseDateToISO(cells[i], currentYear);
+        if (iso) { date = iso; dateIdx = i; break; }
+      }
+      if (!date) continue;
+      stats.dated++;
+
+      const otherCells = cells.filter((_, i) => i !== dateIdx);
+      const allText = otherCells.join(" | ");
+      const teamsFound = matchKboTeamsInText(allText);
+      const cls = classifyKboLine(allText);
+
+      // 선수명: 팀명·날짜 아닌 셀 중 짧은 한글/영문
+      let player = "";
+      for (const c of otherCells) {
+        if (!c || c.length > 30) continue;
+        if (matchKboTeamsInText(c).length > 0) continue;
+        if (/^\d+$/.test(c)) continue;
+        if (/[가-힣]{2,}|[A-Z][a-z]+/.test(c)) {
+          if (!player || c.length < player.length) player = c;
+        }
+      }
+
+      // 트레이드만 2팀, 나머지 단일 팀
+      let fromTeam = null, toTeam = null;
+      if (cls.type === "trade") {
+        fromTeam = teamsFound[0] || null;
+        toTeam = teamsFound[1] || teamsFound[0] || null;
+      } else {
+        toTeam = teamsFound[0] || null;
+      }
+
+      out.push({
+        league: "kbo",
+        date,
+        type: cls.type,
+        typeLabel: cls.label,
+        player: player || "—",
+        fromTeam,
+        toTeam,
+        description: stripDateFromText(otherCells.join(" / ")).slice(0, 200),
+        link: url,
+      });
+      stats.extracted++;
+    }
+  }
+
+  console.log("[KBO 스크래핑]", stats, "샘플 행:", sampleRows);
+  return { items: out.filter(tx => isInRange(tx.date, range)), stats };
+}
+
+/* ============================
+ * MLB: Stats API
+ * ============================ */
+// typeDesc 기반 라벨 매핑 (구체적이고 사람이 읽는 값) — 우선 매칭
+const MLB_DESC_MAP = [
+  { match: "signed as free agent",       type: "signed",   label: "FA 계약" },
+  { match: "designated for assignment",  type: "dfa",      label: "DFA 지정" },
+  { match: "claimed off waivers",        type: "waiver",   label: "웨이버 클레임" },
+  { match: "outrighted",                 type: "outright", label: "마이너 이관" },
+  { match: "outright",                   type: "outright", label: "마이너 이관" },
+  { match: "released",                   type: "released", label: "방출" },
+  { match: "optioned",                   type: "optioned", label: "마이너 옵션" },
+  { match: "recalled",                   type: "recalled", label: "콜업" },
+  { match: "selected",                   type: "selected", label: "40인 등록" },
+  { match: "reinstated",                 type: "returned", label: "복귀" },
+  { match: "activated",                  type: "returned", label: "복귀(활성화)" },
+  { match: "trade",                      type: "trade",    label: "트레이드" },
+  { match: "assigned",                   type: "signed",   label: "이관/배정" },
+  { match: "sent",                       type: "sent",     label: "마이너 강등" },
+  { match: "status change",              type: "il",       label: "상태 변경(IL)" },
+];
+
+// typeCode 폴백 매핑
+const MLB_CODE_MAP = {
+  "TR":  { type: "trade",    label: "트레이드" },
+  "SE":  { type: "selected", label: "40인 등록" },
+  "CU":  { type: "recalled", label: "콜업" },
+  "RTN": { type: "returned", label: "복귀" },
+  "DFA": { type: "dfa",      label: "DFA 지정" },
+  "REL": { type: "released", label: "방출" },
+  "CLW": { type: "waiver",   label: "웨이버 클레임" },
+  "OUT": { type: "outright", label: "마이너 이관" },
+  "ASN": { type: "signed",   label: "이관/배정" },
+  "OPT": { type: "optioned", label: "마이너 옵션" },
+  "SU":  { type: "sent",     label: "마이너 강등" },
+  "SC":  { type: "il",       label: "상태 변경(IL)" },
+};
+
+function classifyMlb(t) {
+  const desc = (t.typeDesc || "").toLowerCase();
+  for (const rule of MLB_DESC_MAP) {
+    if (desc.includes(rule.match)) return { type: rule.type, label: rule.label };
+  }
+  const code = (t.typeCode || "").toUpperCase();
+  return MLB_CODE_MAP[code] || { type: "other", label: t.typeDesc || code || "기타" };
+}
+
+async function fetchMlbTransactions(range) {
+  const startStr = fmtApiDate(range.start);
+  const endStr = fmtApiDate(new Date(range.end.getTime() - 1));
+  const url = `https://statsapi.mlb.com/api/v1/transactions?startDate=${startStr}&endDate=${endStr}&sportId=1`;
+  const data = await fetchJsonDirectOrProxy(url);
+  const txs = data.transactions || [];
+
+  return txs.map(t => {
+    const m = classifyMlb(t);
+    const fromTeam = t.fromTeam ? (matchMlbTeam(t.fromTeam.id) ? { ...matchMlbTeam(t.fromTeam.id), logo: mlbLogoUrl(t.fromTeam.id) } : null) : null;
+    const toTeam = t.toTeam ? (matchMlbTeam(t.toTeam.id) ? { ...matchMlbTeam(t.toTeam.id), logo: mlbLogoUrl(t.toTeam.id) } : null) : null;
+    // 트레이드는 from/to 모두 있음. 그 외 단일 팀 액션은 toTeam을 우선 표시
+    return {
+      league: "mlb",
+      date: (t.date || t.effectiveDate || "").slice(0, 10),
+      type: m.type,
+      typeLabel: m.label,
+      player: t.person?.fullName || "—",
+      fromTeam: m.type === "trade" ? fromTeam : null,
+      toTeam: toTeam || fromTeam,
+      description: t.description || "",
+      link: t.person?.id ? `https://www.mlb.com/player/${t.person.id}` : `https://www.mlb.com/transactions/${(t.date || "").replace(/-/g, "/")}`,
+    };
+  }).filter(tx => isInRange(tx.date, range));
+}
+
+/* ============================
+ * NPB: 4개 공시 페이지
+ * ============================ */
+const NPB_PAGES = [
+  { type: "selected", typeLabel: "신규 등록", path: "pn_registered.html" },
+  { type: "trade",    typeLabel: "트레이드", path: "pn_traded.html" },
+  { type: "released", typeLabel: "자유계약",   path: "pn_released.html" },
+  { type: "retired",  typeLabel: "은퇴",      path: "pn_retired.html" },
+];
+
+async function fetchNpbAll(range) {
+  const year = new Date().getFullYear();
+  const all = [];
+  const stats = {};
+  for (const p of NPB_PAGES) {
+    const url = `https://npb.jp/announcement/${year}/${p.path}`;
+    try {
+      const html = await fetchViaProxy(url);
+      const { items, debug } = parseNpbPage(html, p, url, year);
+      const inRange = items.filter(tx => isInRange(tx.date, range));
+      stats[p.typeLabel] = `${inRange.length}/${items.length}`;
+      console.log(`[NPB ${p.typeLabel}]`, debug, "샘플 행:", debug.sample);
+      all.push(...inRange);
+    } catch (e) {
+      console.warn("NPB page failed:", url, e.message);
+      stats[p.typeLabel] = "✗";
+    }
+  }
+  return { items: all, stats };
+}
+
+function parseNpbPage(html, pageInfo, sourceUrl, defaultYear) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const out = [];
+  const debug = { tables: 0, rows: 0, dated: 0, sample: [] };
+
+  const tables = [...doc.querySelectorAll("table")];
+  debug.tables = tables.length;
+
+  // 일부 NPB 페이지는 날짜를 <h2>/<h3>로 표기하고, 이후 테이블은 해당 날짜에 속함.
+  // 따라서 문서를 순회하며 마지막 보인 날짜 헤더를 추적
+  let currentDate = null;
+  const walker = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_ELEMENT);
+  while (walker.nextNode()) {
+    const el = walker.currentNode;
+    const tag = el.tagName?.toLowerCase();
+    if (["h1","h2","h3","h4","p","caption","strong"].includes(tag)) {
+      const iso = parseDateToISO(el.textContent || "", defaultYear);
+      if (iso) currentDate = iso;
+    }
+    if (tag === "tr") {
+      debug.rows++;
+      const cells = [...el.querySelectorAll("td, th")].map(c =>
+        c.textContent.replace(/\s+/g, " ").trim()
+      );
+      if (cells.length < 2) continue;
+      if (debug.sample.length < 3) debug.sample.push(cells);
+
+      // 1순위: 셀 안의 날짜
+      let date = null, dateIdx = -1;
+      for (let i = 0; i < cells.length; i++) {
+        const iso = parseDateToISO(cells[i], defaultYear);
+        if (iso) { date = iso; dateIdx = i; break; }
+      }
+      // 2순위: 직전 헤더의 날짜
+      if (!date && currentDate) date = currentDate;
+      if (!date) continue;
+      debug.dated++;
+
+      const otherCells = cells.filter((_, i) => i !== dateIdx);
+      const teamsFound = [];
+      const seen = new Set();
+      let player = "";
+
+      for (const c of otherCells) {
+        const team = matchNpbTeam(c);
+        if (team && !seen.has(team.code) && teamsFound.length < 2) {
+          seen.add(team.code); teamsFound.push(team); continue;
+        }
+        if (!player && c.length > 1 && c.length < 30 &&
+            /[ぁ-んァ-ヶ一-龯]/.test(c) && !/^\d/.test(c)) {
+          player = c;
+        }
+      }
+      // 선수명 못 찾았으면 영문 후보
+      if (!player) {
+        for (const c of otherCells) {
+          if (c.length > 1 && c.length < 30 && /[A-Z][a-z]+/.test(c) && !/^\d/.test(c)) {
+            player = c; break;
+          }
+        }
+      }
+
+      out.push({
+        league: "npb",
+        date,
+        type: pageInfo.type,
+        typeLabel: pageInfo.typeLabel,
+        player: player || "—",
+        fromTeam: pageInfo.type === "trade" ? teamsFound[0] || null : null,
+        toTeam: pageInfo.type === "trade" ? (teamsFound[1] || teamsFound[0]) : teamsFound[0] || null,
+        description: otherCells.join(" / ").slice(0, 200),
+        link: sourceUrl,
+      });
+    }
+  }
+
+  return { items: out, debug };
+}
+
+/* ============================
+ * 렌더링
+ * ============================ */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+
+// 다중 소스 로고 폴백 핸들러 (각 img가 데이터 속성으로 후보 URL을 들고 있다가 순차 시도)
+window.__fallbackLogo = function(img) {
+  let logos = [];
+  try { logos = JSON.parse(img.dataset.logos || "[]"); } catch {}
+  const idx = (parseInt(img.dataset.idx) || 0) + 1;
+  if (idx < logos.length) {
+    img.dataset.idx = idx;
+    img.src = logos[idx];
+    return;
+  }
+  // 모든 로고 실패 → 텍스트 코드로 대체 (팀 컬러 배경은 부모 span에 이미 적용)
+  const code = img.alt || "?";
+  const parent = img.parentElement;
+  img.remove();
+  if (parent) parent.textContent = code;
+};
+
+function teamBadge(team, opts = {}) {
+  if (!team) return `<span class="team-badge" style="background:#475569" title="—">—</span>`;
+  const cls = opts.solo ? "team-badge solo" : "team-badge";
+  const style = `background:${team.color};color:${team.textColor || "#fff"}`;
+  const logos = team.logos || (team.logo ? [team.logo] : []);
+  if (logos.length > 0) {
+    const logosJson = JSON.stringify(logos).replace(/"/g, "&quot;");
+    return `<span class="${cls}" style="${style}" title="${escapeHtml(team.name)}">` +
+           `<img src="${escapeHtml(logos[0])}" data-logos="${logosJson}" data-idx="0" ` +
+           `alt="${escapeHtml(team.code)}" onerror="window.__fallbackLogo(this)"></span>`;
+  }
+  return `<span class="${cls}" style="${style}" title="${escapeHtml(team.name)}">${escapeHtml(team.code)}</span>`;
+}
+
+function fmtDateHeader(iso) {
+  const d = new Date(iso + "T12:00:00");
+  const days = ["일","월","화","수","목","금","토"];
+  return `${iso} (${days[d.getDay()]})`;
+}
+
+function groupByDate(items) {
+  const m = new Map();
+  for (const it of items) {
+    if (!m.has(it.date)) m.set(it.date, []);
+    m.get(it.date).push(it);
+  }
+  return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+function renderTxRow(tx) {
+  const teamsHtml = tx.type === "trade" && tx.fromTeam
+    ? `${teamBadge(tx.fromTeam)}<span class="tx-arrow">→</span>${teamBadge(tx.toTeam)}`
+    : teamBadge(tx.toTeam, { solo: true });
+
+  const playerHtml = tx.link
+    ? `<a href="${escapeHtml(tx.link)}" target="_blank" rel="noopener">${escapeHtml(tx.player)}</a>`
+    : escapeHtml(tx.player);
+
+  // 번역이 있으면 한글을 메인으로, 원문은 작은 글씨로 첨부
+  const descKo = tx.descriptionKo && tx.descriptionKo !== tx.description ? tx.descriptionKo : null;
+  const descMain = descKo || tx.description;
+  const descOrig = descKo ? `<div class="tx-desc-orig" title="${escapeHtml(tx.description)}">${escapeHtml(tx.description)}</div>` : "";
+
+  return `
+    <div class="tx-row">
+      <div class="tx-teams">${teamsHtml}</div>
+      <div class="tx-info">
+        <div class="tx-player">${playerHtml}</div>
+        ${descMain ? `<div class="tx-desc" title="${escapeHtml(descMain)}">${escapeHtml(descMain)}</div>` : ""}
+        ${descOrig}
+      </div>
+      <span class="tx-type" data-type="${tx.type}">${escapeHtml(tx.typeLabel)}</span>
+    </div>
+  `;
+}
+
+function renderLeague(leagueId, items) {
+  const el = document.getElementById(`list-${leagueId}`);
+  if (items.length === 0) {
+    el.innerHTML = `<div class="tx-empty">최근 7일 데이터 없음.</div>`;
+    return;
+  }
+  const groups = groupByDate(items);
+  el.innerHTML = groups.map(([date, txs]) => `
+    <div class="date-group">
+      <div class="date-header">📅 ${fmtDateHeader(date)}<span class="day-count">${txs.length}건</span></div>
+      ${txs.map(renderTxRow).join("")}
+    </div>
+  `).join("");
+}
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 3200);
+}
+
+/* ============================
+ * 메인
+ * ============================ */
+async function refresh() {
+  const btn = document.getElementById("refreshBtn");
+  const meta = document.getElementById("lastUpdated");
+  const range = getRange();
+  document.getElementById("weekTag").textContent = fmtRange(range);
+
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>갱신 중...`;
+  meta.textContent = "이적·등록 데이터 수집 중...";
+
+  for (const lg of ["kbo", "mlb", "npb"]) {
+    document.getElementById(`list-${lg}`).innerHTML = `<div class="tx-loading"><span class="spinner"></span>불러오는 중...</div>`;
+    document.getElementById(`src-stat-${lg}`).textContent = "";
+  }
+
+  const totals = {};
+
+  // KBO — 1차 OCR 캡처, 실패 시 HTML 스크래핑 폴백
+  try {
+    const kboStatEl = document.getElementById("src-stat-kbo");
+    let mode = "ocr";
+    let result;
+    try {
+      result = await fetchKboViaOCR(range, kboStatEl);
+    } catch (ocrErr) {
+      console.warn("OCR 실패 → HTML 스크래핑 폴백:", ocrErr.message);
+      mode = "scrape";
+      result = await fetchKboTrades(range);
+    }
+    renderLeague("kbo", result.items);
+    totals.kbo = result.items.length;
+    document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
+    if (mode === "ocr") {
+      kboStatEl.innerHTML = `<span class="ok">📸 OCR · 행 ${result.stats.ocrLines} · 날짜行 ${result.stats.datedLines} · 추출 ${result.stats.extracted} → 7일내 ${result.items.length}</span>`;
+    } else {
+      const s = result.stats;
+      kboStatEl.innerHTML = `<span class="ok">📄 HTML · 테이블 ${s.tables} · 행 ${s.rows} · 날짜行 ${s.dated} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
+    }
+  } catch (e) {
+    console.error("KBO 실패:", e);
+    document.getElementById("list-kbo").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
+    document.getElementById("src-stat-kbo").innerHTML = `<span class="err">실패: ${escapeHtml((e.message || "").slice(0,60))}</span>`;
+    totals.kbo = 0;
+  }
+
+  // MLB (+ 한글 번역)
+  try {
+    const items = await fetchMlbTransactions(range);
+    if (items.length > 0) {
+      meta.textContent = `MLB description 번역 중... (0/${items.length})`;
+      await translateDescriptionsBatch(items, "en", (d, t) => {
+        meta.textContent = `MLB description 번역 중... (${d}/${t})`;
+      });
+    }
+    renderLeague("mlb", items);
+    totals.mlb = items.length;
+    document.getElementById("count-mlb").textContent = `${items.length}건 (최근 7일)`;
+    document.getElementById("src-stat-mlb").innerHTML = `<span class="ok">Stats API ${items.length}건 · 한글 번역 완료</span>`;
+  } catch (e) {
+    console.error("MLB 실패:", e);
+    document.getElementById("list-mlb").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
+    document.getElementById("src-stat-mlb").innerHTML = `<span class="err">실패</span>`;
+    totals.mlb = 0;
+  }
+
+  // NPB (+ 한글 번역)
+  try {
+    const { items, stats } = await fetchNpbAll(range);
+    if (items.length > 0) {
+      meta.textContent = `NPB description 번역 중... (0/${items.length})`;
+      await translateDescriptionsBatch(items, "ja", (d, t) => {
+        meta.textContent = `NPB description 번역 중... (${d}/${t})`;
+      });
+    }
+    renderLeague("npb", items);
+    totals.npb = items.length;
+    document.getElementById("count-npb").textContent = `${items.length}건 (최근 7일)`;
+    const detail = Object.entries(stats).map(([k, v]) => `${k} ${v}`).join(" · ");
+    document.getElementById("src-stat-npb").innerHTML = `<span class="ok">${escapeHtml(detail)} · 한글 번역 완료</span>`;
+  } catch (e) {
+    console.error("NPB 실패:", e);
+    document.getElementById("list-npb").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
+    document.getElementById("src-stat-npb").innerHTML = `<span class="err">실패</span>`;
+    totals.npb = 0;
+  }
+
+  btn.disabled = false;
+  btn.textContent = "🔄 리그 통합 갱신";
+  meta.textContent = `마지막 갱신: ${new Date().toLocaleString("ko-KR")}`;
+  showToast(`최근 7일 이적·등록 · KBO ${totals.kbo || 0} / MLB ${totals.mlb || 0} / NPB ${totals.npb || 0}건`);
+}
+
+document.getElementById("refreshBtn").addEventListener("click", refresh);
+window.addEventListener("DOMContentLoaded", refresh);
+</script>
+</body>
+</html>
