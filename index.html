@@ -834,45 +834,83 @@ function stripDateFromText(text) {
     .replace(/\s+/g, " ").trim();
 }
 
-// 상태/구분 관련 일반 명사 — 선수명 후보에서 제외
+// KBO 22종 카테고리 phrase (긴 것 우선 매칭 위해 길이 내림차순 정렬)
+const KBO_CATEGORY_PHRASES = [
+  "트레이드(웨이버)", "트레이드 (웨이버)",
+  "재활선수(외국인 선수)", "재활선수(외국인선수)",
+  "치료·재활명단", "치료재활명단",
+  "자유계약 선수", "자유계약선수",
+  "FA 보상선수", "FA보상선수",
+  "FA 자격취득", "FA자격취득",
+  "참가활동 정지", "참가활동정지",
+  "외국인선수 교체", "외국인 교체", "용병 교체",
+  "임의해지 복귀",
+  "2차 드래프트", "2차드래프트",
+  "부상자 명단", "부상자명단",
+  "등번호 변경", "등번호변경",
+  "추가 등록", "추가등록",
+  "신규 등록", "신규등록",
+  "엔트리 등록", "엔트리등록",
+  "1군 등록", "1군등록",
+  "해외 복귀", "해외복귀",
+  "재활명단",
+  "트레이드",
+  "임의해지", "임의탈퇴",
+  "소속선수",
+  "경조휴가",
+  "FA 계약", "FA계약",
+  "군 보류", "군보류",
+  "웨이버",
+  "방출",
+  "개명",
+  "복귀",
+  "은퇴",
+].sort((a, b) => b.length - a.length);
+
+// 잔여 일반 명사 (카테고리 phrase 제거 후에도 남을 수 있는 토막 단어들)
 const KBO_STATUS_WORDS = new Set([
   "트레이드","웨이버","방출","은퇴","복귀","이적","계약","등록","말소","공시","이동",
-  "선수","명단","탈퇴","임의","해지","변경","보류","치료","재활","부상","외국인","용병",
-  "교체","드래프트","보상","해외","군대","개명","경조","휴가","활동","정지","자격","취득"
+  "선수","명단","탈퇴","임의","해지","변경","보류","치료","재활","부상","부상자",
+  "외국인","용병","교체","드래프트","보상","해외","군대","개명","경조","휴가",
+  "활동","정지","자격","취득","육성","소속","자유","웨이","바아","바아버","휴가일",
+  "투수","포수","타자","외야수","내야수","좌익수","우익수","중견수","유격수","지명타자",
+  "선발","마무리","불펜","좌완","우완","좌투","우투"
 ]);
 
-// 포지션 키워드 (괄호 안에 들어있을 때 매칭)
 const KBO_POS_RE = /(투수|포수|타자|좌투|우투|외야수|내야수|좌익수|우익수|중견수|1루수|2루수|3루수|유격수|지명타자|선발|마무리|불펜|좌완|우완)/;
+
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 function parseKboLineDetails(line, cls) {
   const teams = matchKboTeamsInText(line);
   let clean = stripDateFromText(line);
 
-  // 포지션 추출 (괄호 안)
+  // 1) 카테고리 phrase를 가장 먼저 제거 (긴 것 우선) — "부상자 명단", "자유계약 선수" 등을 통째로 지움
+  for (const phrase of KBO_CATEGORY_PHRASES) {
+    clean = clean.replace(new RegExp(escapeRegex(phrase), "g"), " ");
+  }
+
+  // 2) 팀명 제거
+  for (const key of KBO_ALIAS_KEYS) {
+    clean = clean.replace(new RegExp(escapeRegex(key), "g"), " ");
+  }
+
+  // 3) 포지션 추출 + 괄호 전체 제거
   let position = null;
   const posMatch = clean.match(/\(([^)]{1,12})\)/);
   if (posMatch && KBO_POS_RE.test(posMatch[1])) position = posMatch[1].trim();
+  if (posMatch) clean = clean.replace(posMatch[0], " ");
 
-  // 선수명 추출용: 팀명 제거한 텍스트에서 한글 2~4자 후보
-  let cleanForPlayer = clean;
-  for (const key of KBO_ALIAS_KEYS) {
-    cleanForPlayer = cleanForPlayer.replace(new RegExp(key, "g"), " ");
-  }
-  const candidates = cleanForPlayer.match(/[가-힣]{2,4}/g) || [];
-  // 상태 관련 단어 제외
+  // 4) 선수명 추출: 한글 2~4자 후보 중 상태 잔여 단어 제외
+  const candidates = clean.match(/[가-힣]{2,4}/g) || [];
   const player = candidates.find(c => !KBO_STATUS_WORDS.has(c)) || candidates[0] || "—";
 
-  // 추가 설명: 팀·선수·포지션·상태 라벨·일반 명사를 제거하고 남은 텍스트
-  // 콤마 구조 보존 → "사유, 부상일수, 휴가일" 형태로 자연스럽게 이어짐
+  // 5) description: 선수명까지 제거하고 남은 텍스트 (콤마 구조 보존)
   let desc = clean;
-  for (const key of KBO_ALIAS_KEYS) desc = desc.replace(new RegExp(key, "g"), " ");
-  if (player && player !== "—") desc = desc.replace(new RegExp(player, "g"), " ");
-  if (posMatch) desc = desc.replace(posMatch[0], " ");
-  if (cls?.label) desc = desc.replace(new RegExp(cls.label, "g"), " ");
-  // 파이프·슬래시·미들닷·탭은 콤마로 통일 (구분자 정규화), 기존 콤마는 유지
+  if (player && player !== "—") desc = desc.replace(new RegExp(escapeRegex(player), "g"), " ");
+  // 파이프/슬래시/미들닷/탭 → 콤마로 통일
   desc = desc.replace(/\s*[|/·\t]\s*/g, ", ");
   desc = desc.replace(/\s+/g, " ").trim();
-  // 중복·앞뒤 콤마 정리
   desc = desc.replace(/(\s*,\s*)+/g, ", ").replace(/^[\s,]+|[\s,]+$/g, "");
   if (desc.length > 80) desc = desc.slice(0, 80).replace(/,\s*$/, "");
 
