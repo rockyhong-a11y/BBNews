@@ -93,6 +93,27 @@
     background: rgba(0,0,0,0.2);
     border-bottom: 1px solid var(--border);
   }
+  .filter-row {
+    padding: 8px 18px;
+    background: rgba(0,0,0,0.15);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px;
+  }
+  .filter-label { color: var(--muted); margin-right: 4px; }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--muted); cursor: pointer; user-select: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .filter-chip input { margin: 0; cursor: pointer; accent-color: var(--accent); }
+  .filter-chip:has(input:checked) {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
   .paste-wrap details { padding: 0; }
   .paste-wrap summary {
     cursor: pointer; padding: 8px 18px;
@@ -345,6 +366,13 @@
     <div class="src-info">
       <span>소스: <b>mlb.com/transactions (Stats API)</b></span>
       <span id="src-stat-mlb"></span>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">필터:</span>
+      <label class="filter-chip"><input type="checkbox" id="filter-mlb-callup"><span>콜업 표시</span></label>
+      <label class="filter-chip"><input type="checkbox" id="filter-mlb-il"><span>부상자 표시</span></label>
+      <label class="filter-chip"><input type="checkbox" id="filter-mlb-minor"><span>마이너 옵션·이관·배정 표시</span></label>
+      <label class="filter-chip"><input type="checkbox" id="filter-mlb-dfa"><span>DFA 지정 표시</span></label>
     </div>
     <div class="tx-list" id="list-mlb"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
   </section>
@@ -1120,11 +1148,18 @@ async function fetchMlbTransactions(range) {
   const data = await fetchJsonDirectOrProxy(url);
   const txs = data.transactions || [];
 
-  return txs.map(t => {
+  // 현금 트레이드는 MLB Stats API가 양측 관점으로 2번 반환 (선수 측 + 현금 측).
+  // 현금 측은 person이 비어있어 player="—"로 표시되므로 중복임 → 제거
+  const filtered = txs.filter(t => {
+    const code = (t.typeCode || "").toUpperCase();
+    if (code === "TR" && !t.person?.fullName) return false;
+    return true;
+  });
+
+  return filtered.map(t => {
     const m = classifyMlb(t);
     const fromTeam = t.fromTeam ? (matchMlbTeam(t.fromTeam.id) ? { ...matchMlbTeam(t.fromTeam.id), logo: mlbLogoUrl(t.fromTeam.id) } : null) : null;
     const toTeam = t.toTeam ? (matchMlbTeam(t.toTeam.id) ? { ...matchMlbTeam(t.toTeam.id), logo: mlbLogoUrl(t.toTeam.id) } : null) : null;
-    // 트레이드는 from/to 모두 있음. 그 외 단일 팀 액션은 toTeam을 우선 표시
     return {
       league: "mlb",
       date: (t.date || t.effectiveDate || "").slice(0, 10),
@@ -1458,7 +1493,7 @@ async function refresh() {
     }
   }
 
-  // MLB (+ 한글 번역)
+  // MLB (+ 한글 번역 + 필터 적용)
   try {
     const items = await fetchMlbTransactions(range);
     if (items.length > 0) {
@@ -1467,9 +1502,10 @@ async function refresh() {
         meta.textContent = `MLB description 번역 중... (${d}/${t})`;
       });
     }
-    renderLeague("mlb", items);
+    // 전체 항목을 글로벌에 저장 → 필터 토글 시 재렌더링용
+    window._mlbAllItems = items;
+    applyMlbFilter();
     totals.mlb = items.length;
-    document.getElementById("count-mlb").textContent = `${items.length}건 (최근 7일)`;
     document.getElementById("src-stat-mlb").innerHTML = `<span class="ok">Stats API ${items.length}건 · 한글 번역 완료</span>`;
   } catch (e) {
     console.error("MLB 실패:", e);
@@ -1590,6 +1626,45 @@ document.addEventListener("paste", (e) => {
   if (details) details.open = true;
   runKboPaste(text, "자동감지");
 });
+
+/* ============================
+ * MLB 필터 (콜업 / 부상자 / 마이너 옵션·이관·배정 / DFA 지정)
+ * ============================ */
+// "signed" type은 FA 계약(typeLabel "FA 계약")과 배정(typeLabel "이관/배정") 둘 다 포함하므로
+// 모든 그룹을 typeLabel(한글 라벨) 기반으로 정확히 매칭
+const CALLUP_LABELS = new Set(["콜업", "40인 등록", "복귀", "복귀(활성화)"]);
+const IL_LABELS     = new Set(["상태 변경(IL)"]);
+const MINOR_LABELS  = new Set(["마이너 옵션", "마이너 이관", "마이너 강등", "이관/배정"]);
+const DFA_LABELS    = new Set(["DFA 지정"]);
+
+function applyMlbFilter() {
+  const items = window._mlbAllItems || [];
+  const showCallup = document.getElementById("filter-mlb-callup").checked;
+  const showIL = document.getElementById("filter-mlb-il").checked;
+  const showMinor = document.getElementById("filter-mlb-minor").checked;
+  const showDfa = document.getElementById("filter-mlb-dfa").checked;
+
+  const filtered = items.filter(it => {
+    if (!showCallup && CALLUP_LABELS.has(it.typeLabel)) return false;
+    if (!showIL     && IL_LABELS.has(it.typeLabel))     return false;
+    if (!showMinor  && MINOR_LABELS.has(it.typeLabel))  return false;
+    if (!showDfa    && DFA_LABELS.has(it.typeLabel))    return false;
+    return true;
+  });
+
+  renderLeague("mlb", filtered);
+  const countEl = document.getElementById("count-mlb");
+  if (showCallup && showIL && showMinor && showDfa) {
+    countEl.textContent = `${items.length}건 (최근 7일)`;
+  } else {
+    countEl.textContent = `${filtered.length} / ${items.length}건 (필터 적용)`;
+  }
+}
+
+document.getElementById("filter-mlb-callup").addEventListener("change", applyMlbFilter);
+document.getElementById("filter-mlb-il").addEventListener("change", applyMlbFilter);
+document.getElementById("filter-mlb-minor").addEventListener("change", applyMlbFilter);
+document.getElementById("filter-mlb-dfa").addEventListener("change", applyMlbFilter);
 
 document.getElementById("refreshBtn").addEventListener("click", refresh);
 window.addEventListener("DOMContentLoaded", refresh);
