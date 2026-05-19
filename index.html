@@ -392,6 +392,39 @@ const wsv = (url) => {
 // 각 URL을 [프록시 경유, 직접] 페어로 펼침 → 어느 한 쪽이라도 살아있으면 표시됨
 const buildLogos = (...urls) => urls.flatMap(u => [wsv(u), u]);
 
+// 선수명 클릭 시 koreabaseball.com / npb.jp 의 해당 선수 페이지로 자동 이동
+// 선수 ID가 없으므로 DuckDuckGo의 "I'm Feeling Ducky" 봉(!ducky)으로 site 한정 첫 결과로 리다이렉트
+// 예) KBO:  https://www.koreabaseball.com/Futures/Player/HitterDetail.aspx?playerId=51298
+//     NPB:  https://npb.jp/bis/players/23125136.html
+function buildPlayerSearchUrl(league, rawPlayer, teamName) {
+  // 포지션 괄호 제거: "브룩스(외야수)" → "브룩스"
+  const clean = (rawPlayer || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (!clean || clean === "—") {
+    if (league === "kbo") return "https://www.koreabaseball.com/Player/Search.aspx";
+    if (league === "npb") return "https://npb.jp/bis/players/";
+    return "#";
+  }
+  const team = (teamName || "").trim();
+
+  if (league === "kbo") {
+    // koreabaseball.com/Player 또는 /Futures/Player 페이지 한정 → 선수 상세 페이지로 직행
+    const q = team
+      ? `"${clean}" ${team} site:koreabaseball.com`
+      : `"${clean}" site:koreabaseball.com`;
+    return `https://duckduckgo.com/?q=${encodeURIComponent("!ducky " + q)}`;
+  }
+
+  if (league === "npb") {
+    // npb.jp/bis/players 한정 → 해당 선수 페이지로 직행
+    const q = team
+      ? `"${clean}" ${team} site:npb.jp/bis/players`
+      : `"${clean}" site:npb.jp/bis/players`;
+    return `https://duckduckgo.com/?q=${encodeURIComponent("!ducky " + q)}`;
+  }
+
+  return "#";
+}
+
 // 로컬 슬라이스 파일만 사용 (사용자 첨부 이미지 분리본)
 const KBO_TEAMS = {
   KIA:  { code: "KIA", name: "KIA 타이거즈", color: "#EA002C", textColor: "#fff", logos: ["logos/kbo-KIA.png"] },
@@ -947,7 +980,7 @@ function parseKboOcrText(text, range) {
       fromTeam,
       toTeam,
       description: det.description,
-      link: "https://www.koreabaseball.com/Player/Trade.aspx",
+      link: buildPlayerSearchUrl("kbo", det.player, toTeam?.code),
     });
     stats.extracted++;
   }
@@ -1022,7 +1055,7 @@ async function fetchKboTrades(range) {
         fromTeam,
         toTeam,
         description: stripDateFromText(otherCells.join(" / ")).slice(0, 200),
-        link: url,
+        link: buildPlayerSearchUrl("kbo", player, toTeam?.code),
       });
       stats.extracted++;
     }
@@ -1198,16 +1231,18 @@ function parseNpbPage(html, pageInfo, sourceUrl, defaultYear) {
         }
       }
 
+      const fromT = pageInfo.type === "trade" ? teamsFound[0] || null : null;
+      const toT = pageInfo.type === "trade" ? (teamsFound[1] || teamsFound[0]) : teamsFound[0] || null;
       out.push({
         league: "npb",
         date,
         type: pageInfo.type,
         typeLabel: pageInfo.typeLabel,
         player: player || "—",
-        fromTeam: pageInfo.type === "trade" ? teamsFound[0] || null : null,
-        toTeam: pageInfo.type === "trade" ? (teamsFound[1] || teamsFound[0]) : teamsFound[0] || null,
+        fromTeam: fromT,
+        toTeam: toT,
         description: otherCells.join(" / ").slice(0, 200),
-        link: sourceUrl,
+        link: buildPlayerSearchUrl("npb", player, toT?.code),
       });
     }
   }
