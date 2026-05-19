@@ -340,7 +340,7 @@
   <section class="league" data-league="kbo">
     <h2><span class="dot"></span>KBO 한국프로야구<span class="count" id="count-kbo">0건</span></h2>
     <div class="src-info">
-      <span>소스: <b>koreabaseball.com</b> 공식 AJAX 엔드포인트 (무료·무제한·키 불필요)</span>
+      <span>소스: <b>koreabaseball.com/Player/Trade.aspx</b></span>
       <span id="src-stat-kbo"></span>
     </div>
     <div class="paste-wrap">
@@ -631,6 +631,30 @@ function matchKboTeamsInText(text) {
   }
   return found;
 }
+// KBO 포지션 키워드 (선수명 괄호 안 매칭용)
+const KBO_POS_RE = /(투수|포수|타자|좌투|우투|좌완|우완|외야수|내야수|좌익수|우익수|중견수|1루수|2루수|3루수|유격수|지명타자|선발|마무리|불펜)/;
+
+// KBO API의 typeText(항목 라벨) → 카테고리 타입 매핑
+// 우선순위: 구체적 → 일반
+function classifyKboLine(text) {
+  const t = text || "";
+  if (/트레이드/.test(t))                                return { type: "trade",    label: t };
+  if (/부상자|치료\s*[·.]?\s*재활|재활선수|참가활동/.test(t)) return { type: "il",       label: t };
+  if (/약물|도핑|출장정지|출전정지|징계/.test(t))         return { type: "il",       label: t };
+  if (/말소|엔트리\s*제외|재활군/.test(t))               return { type: "il",       label: t };
+  if (/자유계약/.test(t))                                return { type: "released", label: t };
+  if (/임의해지|임의탈퇴/.test(t))                       return { type: "released", label: t };
+  if (/웨이버/.test(t))                                  return { type: "waiver",   label: t };
+  if (/방출/.test(t))                                    return { type: "released", label: t };
+  if (/은퇴/.test(t))                                    return { type: "retired",  label: t };
+  if (/FA\s*보상선수|FA\s*자격취득|FA\s*계약|2차\s*드래프트/.test(t)) return { type: "signed",   label: t };
+  if (/해외\s*복귀|복귀/.test(t))                        return { type: "returned", label: t };
+  if (/추가\s*등록|신규\s*등록|1군\s*등록|엔트리\s*등록|소속선수|콜업/.test(t)) return { type: "selected", label: t };
+  if (/외국인선수\s*교체|외국인\s*교체|용병\s*교체/.test(t)) return { type: "signed",   label: t };
+  if (/영입|입단|사인|재계약|신규\s*계약/.test(t))       return { type: "signed",   label: t };
+  return { type: "other", label: t || "기타" };
+}
+
 function matchMlbTeam(id) { return MLB_TEAM_BY_ID[id] || null; }
 function matchNpbTeam(text) {
   if (!text) return null;
@@ -768,72 +792,59 @@ function isInRange(isoDate, range) {
  *   - 결과 데이터 구조와 렌더링 흐름이 다른 리그와 일치
  * ============================ */
 
-// MLB의 fetchJsonDirectOrProxy 패턴을 KBO용 POST에 맞게 확장
-async function fetchKboPostJson(url, formBody) {
-  // 1) 직접 호출 시도 (CORS 차단되면 catch)
+// KBO ASMX 엔드포인트는 GET도 허용 → CORS 프록시(GET 전용)로 안정적 호출 가능
+async function fetchKboJsonViaGet(apiUrl) {
+  // 1) 직접 호출 (브라우저에서 보통 CORS 차단되지만 일부 환경에선 가능)
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body: formBody,
-    });
+    const res = await fetch(apiUrl, { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
-      console.log("[KBO ✓ direct] rows:", data.rows?.length);
+      console.log("[KBO ✓ direct]", data.rows?.length, "rows");
       return data;
     }
-  } catch (e) { /* CORS 차단 → 프록시로 폴백 */ }
+  } catch (e) { /* 프록시로 폴백 */ }
 
-  // 2) 프록시 폴백 (allorigins POST 엔드포인트 — JSON 명세로 POST 위임)
-  try {
-    const res = await fetch("https://api.allorigins.win/post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url,
-        body: formBody,
-        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-      }),
-    });
-    if (!res.ok) throw new Error("allorigins HTTP " + res.status);
-    const wrapped = await res.json();
-    const inner = JSON.parse(wrapped.contents);
-    console.log("[KBO ✓ allorigins-post] rows:", inner.rows?.length);
-    return inner;
-  } catch (e) { console.warn("[KBO ✗ allorigins-post]", e.message); }
+  // 2~4) 표준 GET 프록시 폴백 (POST 불필요 → 안정적)
+  const proxies = [
+    { name: "corsproxy.io",   url: `https://corsproxy.io/?${encodeURIComponent(apiUrl)}` },
+    { name: "allorigins/raw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}` },
+    { name: "codetabs",       url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(apiUrl)}` },
+  ];
 
-  // 3) corsproxy.io 폴백
-  try {
-    const proxied = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    const res = await fetch(proxied, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-      body: formBody,
-    });
-    if (!res.ok) throw new Error("corsproxy HTTP " + res.status);
-    const data = await res.json();
-    console.log("[KBO ✓ corsproxy] rows:", data.rows?.length);
-    return data;
-  } catch (e) { console.warn("[KBO ✗ corsproxy]", e.message); }
-
-  throw new Error("KBO 데이터 fetch 실패 (모든 경로)");
+  for (const p of proxies) {
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(p.url, { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(tid);
+      if (!res.ok) { console.warn(`[KBO ✗ ${p.name}] HTTP ${res.status}`); continue; }
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        console.log(`[KBO ✓ ${p.name}]`, data.rows?.length, "rows");
+        return data;
+      } catch (e) {
+        console.warn(`[KBO ✗ ${p.name}] JSON parse 실패, 첫 200자:`, text.slice(0, 200));
+      }
+    } catch (e) {
+      console.warn(`[KBO ✗ ${p.name}]`, e.message);
+    }
+  }
+  throw new Error("KBO 데이터 fetch 실패 (모든 프록시)");
 }
 
 // MLB·NPB·CPBL과 동일한 시그니처: range → items[]
 async function fetchKboTransactions(range) {
   const year = new Date().getFullYear();
-  const apiUrl = "https://www.koreabaseball.com/ws/Player.asmx/GetTradeList";
-  const formBody = new URLSearchParams({
+  // ASMX 메서드를 GET 쿼리 스트링으로 호출 (서버가 GET·POST 둘 다 허용)
+  const params = new URLSearchParams({
     seasonId: String(year),
     monthId: "0", bdSc: "0", teamName: "", searchIf: "",
     pageNo: "1", listCount: "300",
   }).toString();
+  const apiUrl = `https://www.koreabaseball.com/ws/Player.asmx/GetTradeList?${params}`;
 
-  const data = await fetchKboPostJson(apiUrl, formBody);
+  const data = await fetchKboJsonViaGet(apiUrl);
   if (!data?.rows) throw new Error("KBO 응답에 rows 없음");
 
   // 각 row의 셀 배열: [날짜, 항목, 팀, 선수(포지션), 비고]
@@ -1339,26 +1350,18 @@ async function refresh() {
 
   const totals = {};
 
-  // KBO — 풀 자동: 페이지의 공식 AJAX 엔드포인트를 CORS 프록시로 호출
-  // → JSON → 탭 구분 텍스트 → parseKboPastedText (수동 paste와 동일 파서)
-  {
-    const kboStatEl = document.getElementById("src-stat-kbo");
-    try {
-      const result = await fetchKboAuto(range, kboStatEl);
-      renderLeague("kbo", result.items);
-      totals.kbo = result.items.length;
-      document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
-      const s = result.stats;
-      kboStatEl.innerHTML = `<span class="ok">📋 자동감지 · 행 ${s.ocrLines} · 날짜行 ${s.datedLines} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
-    } catch (e) {
-      console.error("[KBO] 자동 수집 실패:", e);
-      document.getElementById("list-kbo").innerHTML =
-        `<div class="tx-empty">자동 수집 실패: ${escapeHtml(e.message || "")}.<br><br>
-         👉 KBO 페이지에서 표 영역을 드래그·복사한 뒤<br>
-         이 페이지 어디든 <b>Ctrl+V (Cmd+V)</b> 누르면 분석됩니다.</div>`;
-      kboStatEl.innerHTML = `<span class="err">자동 수집 실패 → 클립보드 paste 권장</span>`;
-      totals.kbo = 0;
-    }
+  // KBO — MLB·NPB·CPBL과 동일 패턴: fetchKboTransactions(range) → items 직접 반환
+  try {
+    const items = await fetchKboTransactions(range);
+    renderLeague("kbo", items);
+    totals.kbo = items.length;
+    document.getElementById("count-kbo").textContent = `${items.length}건 (최근 7일)`;
+    document.getElementById("src-stat-kbo").innerHTML = `<span class="ok">koreabaseball.com · ${items.length}건 (최근 7일)</span>`;
+  } catch (e) {
+    console.error("[KBO] 수집 실패:", e);
+    document.getElementById("list-kbo").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
+    document.getElementById("src-stat-kbo").innerHTML = `<span class="err">실패: ${escapeHtml((e.message || "").slice(0,60))}</span>`;
+    totals.kbo = 0;
   }
 
   // MLB (+ 한글 번역 + 필터 적용)
