@@ -16,6 +16,7 @@
     --kbo: #ef4444;
     --mlb: #3b82f6;
     --npb: #f59e0b;
+    --cpbl: #14b8a6;
     --t-trade: #22c55e;
     --t-signed: #3b82f6;
     --t-waiver: #06b6d4;
@@ -58,10 +59,11 @@
   button.refresh:disabled { opacity: 0.5; cursor: not-allowed; }
 
   main {
-    display: grid; grid-template-columns: repeat(3, 1fr);
+    display: grid; grid-template-columns: repeat(4, 1fr);
     gap: 20px; padding: 20px 24px 40px;
   }
-  @media (max-width: 1400px) { main { grid-template-columns: 1fr; } }
+  @media (max-width: 1700px) { main { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 900px)  { main { grid-template-columns: 1fr; } }
 
   .league {
     background: var(--panel); border: 1px solid var(--border);
@@ -78,6 +80,7 @@
   .league[data-league="kbo"] h2 .dot { background: var(--kbo); }
   .league[data-league="mlb"] h2 .dot { background: var(--mlb); }
   .league[data-league="npb"] h2 .dot { background: var(--npb); }
+  .league[data-league="cpbl"] h2 .dot { background: var(--cpbl); }
   .league .count { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: normal; }
   .league .src-info {
     padding: 8px 18px; font-size: 11px; color: var(--muted);
@@ -337,7 +340,7 @@
   <section class="league" data-league="kbo">
     <h2><span class="dot"></span>KBO 한국프로야구<span class="count" id="count-kbo">0건</span></h2>
     <div class="src-info">
-      <span>소스: <b>koreabaseball.com/Player/Trade.aspx</b></span>
+      <span>소스: <b>koreabaseball.com</b> 공식 AJAX 엔드포인트 (무료·무제한·키 불필요)</span>
       <span id="src-stat-kbo"></span>
     </div>
     <div class="paste-wrap">
@@ -384,6 +387,20 @@
       <span id="src-stat-npb"></span>
     </div>
     <div class="tx-list" id="list-npb"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
+  </section>
+
+  <section class="league" data-league="cpbl">
+    <h2><span class="dot"></span>CPBL 대만프로야구<span class="count" id="count-cpbl">0건</span></h2>
+    <div class="src-info">
+      <span>소스: <b>cpbl.com.tw/player/trans</b></span>
+      <span id="src-stat-cpbl"></span>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">필터:</span>
+      <label class="filter-chip"><input type="checkbox" id="filter-cpbl-callup"><span>콜업 표시</span></label>
+      <label class="filter-chip"><input type="checkbox" id="filter-cpbl-minor"><span>2군 강등 표시</span></label>
+    </div>
+    <div class="tx-list" id="list-cpbl"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
   </section>
 </main>
 
@@ -550,6 +567,48 @@ const NPB_ALIASES = {
   "オリックス": "Buffaloes", "バファローズ": "Buffaloes", "Buffaloes": "Buffaloes",
 };
 
+// CPBL 대만프로야구 6개 구단
+const CPBL_TEAMS = {
+  Brothers:  { code: "兄弟", name: "중신 브라더스",     color: "#FFC000", textColor: "#000",
+               logos: ["logos/cpbl-Brothers.png"] },
+  UniLions:  { code: "統一", name: "통일라이온스",       color: "#E45A22", textColor: "#fff",
+               logos: ["logos/cpbl-UniLions.png"] },
+  Monkeys:   { code: "樂天", name: "라쿠텐 몽키스",      color: "#870010", textColor: "#fff",
+               logos: ["logos/cpbl-Monkeys.png"] },
+  Guardians: { code: "富邦", name: "푸방 가디언스",      color: "#002F6C", textColor: "#fff",
+               logos: ["logos/cpbl-Guardians.png"] },
+  Dragons:   { code: "味全", name: "웨이천 드래곤스",    color: "#B71234", textColor: "#fff",
+               logos: ["logos/cpbl-Dragons.png"] },
+  Hawks:     { code: "台鋼", name: "TSG 호크스",         color: "#1A472A", textColor: "#fff",
+               logos: ["logos/cpbl-Hawks.png"] },
+};
+
+const CPBL_ALIASES = {
+  // 영문 (en.cpbl.com.tw)
+  "Brothers": "Brothers", "CTBC": "Brothers", "CTBC Brothers": "Brothers",
+  "Uni-Lions": "UniLions", "Lions": "UniLions", "Uni Lions": "UniLions", "Uni-President": "UniLions",
+  "Monkeys": "Monkeys", "Rakuten": "Monkeys", "Rakuten Monkeys": "Monkeys",
+  "Guardians": "Guardians", "Fubon": "Guardians", "Fubon Guardians": "Guardians",
+  "DRAGONS": "Dragons", "Dragons": "Dragons", "Wei Chuan": "Dragons", "Wei-Chuan": "Dragons",
+  "Hawks": "Hawks", "TSG": "Hawks", "TSG Hawks": "Hawks",
+  // 번체 중문 (cpbl.com.tw)
+  "中信兄弟": "Brothers", "兄弟": "Brothers",
+  "統一7-ELEVEn獅": "UniLions", "統一獅": "UniLions", "統一": "UniLions",
+  "樂天桃猿": "Monkeys", "樂天": "Monkeys", "桃猿": "Monkeys",
+  "富邦悍將": "Guardians", "富邦": "Guardians", "悍將": "Guardians",
+  "味全龍": "Dragons", "味全": "Dragons",
+  "台鋼雄鷹": "Hawks", "台鋼": "Hawks", "雄鷹": "Hawks",
+};
+
+const CPBL_ALIAS_KEYS = Object.keys(CPBL_ALIASES).sort((a, b) => b.length - a.length);
+function matchCpblTeam(text) {
+  if (!text) return null;
+  for (const key of CPBL_ALIAS_KEYS) {
+    if (text.includes(key)) return CPBL_TEAMS[CPBL_ALIASES[key]];
+  }
+  return null;
+}
+
 // 별칭 키를 길이 내림차순으로 정렬 (긴 별칭 우선 매칭, e.g. "東京ヤクルト" before "ヤクルト")
 const KBO_ALIAS_KEYS = Object.keys(KBO_ALIASES).sort((a, b) => b.length - a.length);
 const NPB_ALIAS_KEYS = Object.keys(NPB_ALIASES).sort((a, b) => b.length - a.length);
@@ -704,394 +763,121 @@ function isInRange(isoDate, range) {
 
 /* ============================
  * KBO: koreabaseball.com/Player/Trade.aspx
- *   1차) Jina Reader (r.jina.ai) — JS 렌더링 후 마크다운 반환
- *   2차) HTML 직접 스크래핑
- *   3차) 사용자 paste (자동 감지)
+ *   MLB·NPB·CPBL과 동일한 패턴 적용:
+ *   - fetchKboTransactions(range) → items 배열 직접 반환
+ *   - 결과 데이터 구조와 렌더링 흐름이 다른 리그와 일치
  * ============================ */
 
-// Jina Reader: 원격 헤드리스 브라우저로 페이지를 렌더링한 뒤 마크다운으로 반환.
-// 무료·CORS 허용·API 키 불필요. https://r.jina.ai/ 참고.
-async function fetchKboViaJina(range, progressEl) {
-  const targetUrl = "https://www.koreabaseball.com/Player/Trade.aspx";
-  const jinaUrls = [
-    `https://r.jina.ai/${targetUrl}`,
-    `https://r.jina.ai/https://www.koreabaseball.com/Player/Trade.aspx?Year=${new Date().getFullYear()}`,
-  ];
-
-  const setProgress = (txt) => {
-    if (progressEl) progressEl.innerHTML = `<span class="ok"><span class="spinner"></span>${txt}</span>`;
-  };
-
-  let lastErr;
-  for (const jurl of jinaUrls) {
-    try {
-      setProgress("Jina Reader 렌더링 중 (약 5~15초)...");
-      const res = await fetch(jurl, {
-        cache: "no-store",
-        headers: { "Accept": "text/plain", "X-Return-Format": "markdown" },
-      });
-      if (!res.ok) { lastErr = new Error("Jina " + res.status); continue; }
-      const text = await res.text();
-      console.log(`[Jina 응답 첫 1500자] ${jurl}\n`, text.slice(0, 1500));
-
-      // 동일한 줄 단위 파서 재활용 (parseKboOcrText는 paste/OCR 양쪽에 쓰임)
-      const parsed = parseKboOcrText(text, range);
-      if (parsed.stats.datedLines > 0) {
-        return {
-          items: parsed.items,
-          stats: { ...parsed.stats, mode: "jina", responseSize: text.length },
-        };
-      }
-      // 데이터 없으면 다음 URL 시도
-      lastErr = new Error("Jina 응답에 날짜 행 없음");
-    } catch (e) {
-      console.warn("Jina 실패:", jurl, e.message);
-      lastErr = e;
+// MLB의 fetchJsonDirectOrProxy 패턴을 KBO용 POST에 맞게 확장
+async function fetchKboPostJson(url, formBody) {
+  // 1) 직접 호출 시도 (CORS 차단되면 catch)
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: formBody,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log("[KBO ✓ direct] rows:", data.rows?.length);
+      return data;
     }
-  }
-  throw lastErr || new Error("Jina Reader 실패");
+  } catch (e) { /* CORS 차단 → 프록시로 폴백 */ }
+
+  // 2) 프록시 폴백 (allorigins POST 엔드포인트 — JSON 명세로 POST 위임)
+  try {
+    const res = await fetch("https://api.allorigins.win/post", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        body: formBody,
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+      }),
+    });
+    if (!res.ok) throw new Error("allorigins HTTP " + res.status);
+    const wrapped = await res.json();
+    const inner = JSON.parse(wrapped.contents);
+    console.log("[KBO ✓ allorigins-post] rows:", inner.rows?.length);
+    return inner;
+  } catch (e) { console.warn("[KBO ✗ allorigins-post]", e.message); }
+
+  // 3) corsproxy.io 폴백
+  try {
+    const proxied = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const res = await fetch(proxied, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+      body: formBody,
+    });
+    if (!res.ok) throw new Error("corsproxy HTTP " + res.status);
+    const data = await res.json();
+    console.log("[KBO ✓ corsproxy] rows:", data.rows?.length);
+    return data;
+  } catch (e) { console.warn("[KBO ✗ corsproxy]", e.message); }
+
+  throw new Error("KBO 데이터 fetch 실패 (모든 경로)");
 }
 
-// Tesseract.js lazy load
-let _tesseractPromise = null;
-function loadTesseract() {
-  if (typeof Tesseract !== "undefined") return Promise.resolve();
-  if (_tesseractPromise) return _tesseractPromise;
-  _tesseractPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js";
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Tesseract.js 로드 실패"));
-    document.head.appendChild(s);
-  });
-  return _tesseractPromise;
-}
+// MLB·NPB·CPBL과 동일한 시그니처: range → items[]
+async function fetchKboTransactions(range) {
+  const year = new Date().getFullYear();
+  const apiUrl = "https://www.koreabaseball.com/ws/Player.asmx/GetTradeList";
+  const formBody = new URLSearchParams({
+    seasonId: String(year),
+    monthId: "0", bdSc: "0", teamName: "", searchIf: "",
+    pageNo: "1", listCount: "300",
+  }).toString();
 
-async function fetchKboViaOCR(range, progressEl) {
-  const targetUrl = "https://www.koreabaseball.com/Player/Trade.aspx";
+  const data = await fetchKboPostJson(apiUrl, formBody);
+  if (!data?.rows) throw new Error("KBO 응답에 rows 없음");
 
-  // 스크린샷: thum.io 우선, 안되면 mShots
-  const shotUrls = [
-    `https://image.thum.io/get/width/1600/wait/5/png/${targetUrl}`,
-    `https://s.wordpress.com/mshots/v1/${encodeURIComponent(targetUrl)}?w=1600`,
-  ];
+  // 각 row의 셀 배열: [날짜, 항목, 팀, 선수(포지션), 비고]
+  const items = (data.rows || []).map(r => {
+    const cells = (r.row || []).map(c => (c?.Text || "").trim());
+    if (cells.length < 4) return null;
+    const [dateText, typeText, teamText, playerText, noteText = ""] = cells;
 
-  await loadTesseract();
-  if (typeof Tesseract === "undefined") throw new Error("Tesseract.js 미사용 가능");
+    const date = parseDateToISO(dateText);
+    if (!date) return null;
 
-  const setProgress = (txt) => {
-    if (progressEl) progressEl.innerHTML = `<span class="ok"><span class="spinner"></span>${txt}</span>`;
-  };
+    const team = matchKboTeam(teamText);
+    const cls = classifyKboLine(typeText);
 
-  let lastErr;
-  for (const url of shotUrls) {
-    try {
-      setProgress("스크린샷 가져오는 중...");
-      const { data } = await Tesseract.recognize(url, "kor+eng", {
-        logger: m => {
-          if (m.status === "recognizing text") setProgress(`OCR ${Math.round(m.progress * 100)}%`);
-          else if (m.status) setProgress(m.status);
-        }
-      });
-      const text = data.text || "";
-      console.log("[KBO OCR 원본]\n" + text);
-      const parsed = parseKboOcrText(text, range);
-      console.log("[KBO OCR 파싱]", parsed.stats);
-      if (parsed.items.length > 0 || parsed.stats.ocrLines > 5) return parsed;
-    } catch (e) {
-      console.warn("OCR 시도 실패:", url, e.message);
-      lastErr = e;
-    }
-  }
-  throw lastErr || new Error("OCR 실패");
-}
+    // 선수명에서 (포지션) 분리
+    const posMatch = playerText.match(/\(([^)]+)\)$/);
+    const position = (posMatch && KBO_POS_RE.test(posMatch[1])) ? posMatch[1] : null;
+    const playerName = playerText.replace(/\([^)]*\)$/, "").trim();
+    const playerWithPos = position ? `${playerName}(${position})` : playerName;
 
-// KBO 공식 사이트의 22종 항목에 맞춘 분류 (구체적·긴 키워드 우선)
-function classifyKboLine(text) {
-  // 트레이드 (웨이버 트레이드 포함)
-  if (/트레이드\s*\(\s*웨이버\s*\)/.test(text))
-    return { type: "trade", label: "트레이드(웨이버)" };
-  if (/트레이드|맞트레이드|\d+\s*[:\s]\s*\d+\s*트레이드/.test(text))
-    return { type: "trade", label: "트레이드" };
-
-  // 부상/재활/징계
-  if (/부상자\s*명단/.test(text))
-    return { type: "il", label: "부상자 명단" };
-  if (/치료\s*·?\s*재활\s*명단|재활\s*명단/.test(text))
-    return { type: "il", label: "치료·재활명단" };
-  if (/재활선수\s*\(\s*외국인/.test(text))
-    return { type: "il", label: "재활선수(외국인)" };
-  if (/참가활동\s*정지/.test(text))
-    return { type: "il", label: "참가활동 정지" };
-  if (/약물|도핑|출장정지|출전정지|징계/.test(text))
-    return { type: "il", label: "징계/약물" };
-  if (/1군\s*말소|엔트리\s*제외|재활군/.test(text))
-    return { type: "il", label: "1군 말소" };
-
-  // 방출/자유계약/웨이버
-  if (/자유계약\s*선수|자유계약\s*공시|자유계약공시|FA\s*공시/.test(text))
-    return { type: "released", label: "자유계약 선수" };
-  if (/임의해지\s*복귀/.test(text))
-    return { type: "returned", label: "임의해지 복귀" };
-  if (/임의해지|임의\s*탈퇴|임의탈퇴/.test(text))
-    return { type: "released", label: "임의해지" };
-  if (/웨이버/.test(text))
-    return { type: "waiver", label: "웨이버" };
-  if (/방출/.test(text))
-    return { type: "released", label: "방출" };
-
-  // FA / 드래프트
-  if (/FA\s*보상선수/.test(text))
-    return { type: "signed", label: "FA 보상선수" };
-  if (/FA\s*자격취득/.test(text))
-    return { type: "signed", label: "FA 자격취득" };
-  if (/FA\s*계약/.test(text))
-    return { type: "signed", label: "FA 계약" };
-  if (/2차\s*드래프트/.test(text))
-    return { type: "signed", label: "2차 드래프트" };
-
-  // 등록/복귀/소속
-  if (/해외\s*복귀/.test(text))
-    return { type: "returned", label: "해외 복귀" };
-  if (/추가\s*등록/.test(text))
-    return { type: "selected", label: "추가 등록" };
-  if (/신규\s*등록|1군\s*등록|콜업|엔트리\s*등록/.test(text))
-    return { type: "selected", label: "신규/콜업" };
-  if (/소속선수/.test(text))
-    return { type: "selected", label: "소속선수" };
-
-  // 행정/기타
-  if (/등번호\s*변경/.test(text))
-    return { type: "other", label: "등번호 변경" };
-  if (/개명/.test(text))
-    return { type: "other", label: "개명" };
-  if (/군\s*보류/.test(text))
-    return { type: "other", label: "군 보류" };
-  if (/경조휴가/.test(text))
-    return { type: "other", label: "경조휴가" };
-  if (/은퇴/.test(text))
-    return { type: "retired", label: "은퇴" };
-
-  // 외국인 / 일반 계약
-  if (/외국인선수\s*교체|외국인\s*교체|용병\s*교체/.test(text))
-    return { type: "signed", label: "외국인 교체" };
-  if (/영입|입단|사인|재계약|신규\s*계약/.test(text))
-    return { type: "signed", label: "계약" };
-  if (/복귀/.test(text))
-    return { type: "returned", label: "복귀" };
-
-  return { type: "other", label: "이동" };
-}
-
-// description에서 날짜 패턴 제거
-function stripDateFromText(text) {
-  return text
-    .replace(/\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}\s*일?\.?/g, "")
-    .replace(/\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2}\.?/g, "")
-    .replace(/\s+/g, " ").trim();
-}
-
-// KBO 22종 카테고리 phrase (긴 것 우선 매칭 위해 길이 내림차순 정렬)
-const KBO_CATEGORY_PHRASES = [
-  "트레이드(웨이버)", "트레이드 (웨이버)",
-  "재활선수(외국인 선수)", "재활선수(외국인선수)",
-  "치료·재활명단", "치료재활명단",
-  "자유계약 선수", "자유계약선수",
-  "FA 보상선수", "FA보상선수",
-  "FA 자격취득", "FA자격취득",
-  "참가활동 정지", "참가활동정지",
-  "외국인선수 교체", "외국인 교체", "용병 교체",
-  "임의해지 복귀",
-  "2차 드래프트", "2차드래프트",
-  "부상자 명단", "부상자명단",
-  "등번호 변경", "등번호변경",
-  "추가 등록", "추가등록",
-  "신규 등록", "신규등록",
-  "엔트리 등록", "엔트리등록",
-  "1군 등록", "1군등록",
-  "해외 복귀", "해외복귀",
-  "재활명단",
-  "트레이드",
-  "임의해지", "임의탈퇴",
-  "소속선수",
-  "경조휴가",
-  "FA 계약", "FA계약",
-  "군 보류", "군보류",
-  "웨이버",
-  "방출",
-  "개명",
-  "복귀",
-  "은퇴",
-].sort((a, b) => b.length - a.length);
-
-// 잔여 일반 명사 (카테고리 phrase 제거 후에도 남을 수 있는 토막 단어들)
-const KBO_STATUS_WORDS = new Set([
-  "트레이드","웨이버","방출","은퇴","복귀","이적","계약","등록","말소","공시","이동",
-  "선수","명단","탈퇴","임의","해지","변경","보류","치료","재활","부상","부상자",
-  "외국인","용병","교체","드래프트","보상","해외","군대","개명","경조","휴가",
-  "활동","정지","자격","취득","육성","소속","자유","웨이","바아","바아버","휴가일",
-  "투수","포수","타자","외야수","내야수","좌익수","우익수","중견수","유격수","지명타자",
-  "선발","마무리","불펜","좌완","우완","좌투","우투"
-]);
-
-const KBO_POS_RE = /(투수|포수|타자|좌투|우투|외야수|내야수|좌익수|우익수|중견수|1루수|2루수|3루수|유격수|지명타자|선발|마무리|불펜|좌완|우완)/;
-
-function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-
-function parseKboLineDetails(line, cls) {
-  const teams = matchKboTeamsInText(line);
-  let clean = stripDateFromText(line);
-
-  // 1) 카테고리 phrase를 가장 먼저 제거 (긴 것 우선) — "부상자 명단", "자유계약 선수" 등을 통째로 지움
-  for (const phrase of KBO_CATEGORY_PHRASES) {
-    clean = clean.replace(new RegExp(escapeRegex(phrase), "g"), " ");
-  }
-
-  // 2) 팀명 제거
-  for (const key of KBO_ALIAS_KEYS) {
-    clean = clean.replace(new RegExp(escapeRegex(key), "g"), " ");
-  }
-
-  // 3) 포지션 추출 + 괄호 전체 제거
-  let position = null;
-  const posMatch = clean.match(/\(([^)]{1,12})\)/);
-  if (posMatch && KBO_POS_RE.test(posMatch[1])) position = posMatch[1].trim();
-  if (posMatch) clean = clean.replace(posMatch[0], " ");
-
-  // 4) 선수명 추출: 한글 2~4자 후보 중 상태 잔여 단어 제외
-  const candidates = clean.match(/[가-힣]{2,4}/g) || [];
-  const player = candidates.find(c => !KBO_STATUS_WORDS.has(c)) || candidates[0] || "—";
-
-  // 5) description: 선수명까지 제거하고 남은 텍스트 (콤마 구조 보존)
-  let desc = clean;
-  if (player && player !== "—") desc = desc.replace(new RegExp(escapeRegex(player), "g"), " ");
-  // 파이프/슬래시/미들닷/탭 → 콤마로 통일
-  desc = desc.replace(/\s*[|/·\t]\s*/g, ", ");
-  desc = desc.replace(/\s+/g, " ").trim();
-  desc = desc.replace(/(\s*,\s*)+/g, ", ").replace(/^[\s,]+|[\s,]+$/g, "");
-  if (desc.length > 80) desc = desc.slice(0, 80).replace(/,\s*$/, "");
-
-  return { player, position, teams, description: desc };
-}
-
-function parseKboOcrText(text, range) {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 3);
-  const items = [];
-  const currentYear = new Date().getFullYear();
-  const stats = { ocrLines: lines.length, datedLines: 0, extracted: 0 };
-
-  for (const line of lines) {
-    const date = parseDateToISO(line, currentYear);
-    if (!date) continue;
-    stats.datedLines++;
-
-    const cls = classifyKboLine(line);
-    const det = parseKboLineDetails(line, cls);
-
-    // 1줄차에 표시될 선수명: "이름(포지션)"
-    const playerWithPos = det.position ? `${det.player}(${det.position})` : det.player;
-
-    // 트레이드만 from→to 2팀, 나머지는 단일 팀
+    // 트레이드의 경우 비고에 상대팀이 있을 수 있음
     let fromTeam = null, toTeam = null;
     if (cls.type === "trade") {
-      fromTeam = det.teams[0] || null;
-      toTeam = det.teams[1] || det.teams[0] || null;
+      const otherTeam = matchKboTeam(noteText);
+      fromTeam = team;
+      toTeam = otherTeam || team;
     } else {
-      toTeam = det.teams[0] || null;
+      toTeam = team;
     }
 
-    items.push({
+    return {
       league: "kbo",
       date,
       type: cls.type,
-      typeLabel: cls.label,
+      typeLabel: typeText,            // API 원본 한글 라벨 그대로
       player: playerWithPos,
-      fromTeam,
-      toTeam,
-      description: det.description,
-      link: buildPlayerSearchUrl("kbo", det.player, toTeam?.code),
-    });
-    stats.extracted++;
-  }
+      fromTeam, toTeam,
+      description: noteText,
+      link: buildPlayerSearchUrl("kbo", playerName, team?.code),
+    };
+  }).filter(Boolean);
 
-  return { items: items.filter(tx => isInRange(tx.date, range)), stats };
-}
-
-async function fetchKboTrades(range) {
-  const url = "https://www.koreabaseball.com/Player/Trade.aspx";
-  const html = await fetchViaProxy(url);
-  const doc = new DOMParser().parseFromString(html, "text/html");
-
-  const out = [];
-  const stats = { tables: 0, rows: 0, dated: 0, extracted: 0 };
-  const currentYear = new Date().getFullYear();
-
-  // 모든 테이블의 모든 행을 훑어, 어느 셀이든 날짜 패턴이 있으면 데이터 행으로 간주
-  const tables = [...doc.querySelectorAll("table")];
-  stats.tables = tables.length;
-  const sampleRows = [];
-
-  for (const table of tables) {
-    const rows = [...table.querySelectorAll("tr")];
-    for (const row of rows) {
-      stats.rows++;
-      const cells = [...row.querySelectorAll("td, th")].map(c =>
-        c.textContent.replace(/\s+/g, " ").trim()
-      );
-      if (cells.length < 2) continue;
-      if (sampleRows.length < 3) sampleRows.push(cells);
-
-      // 어느 셀에서든 날짜 추출
-      let date = null, dateIdx = -1;
-      for (let i = 0; i < cells.length; i++) {
-        const iso = parseDateToISO(cells[i], currentYear);
-        if (iso) { date = iso; dateIdx = i; break; }
-      }
-      if (!date) continue;
-      stats.dated++;
-
-      const otherCells = cells.filter((_, i) => i !== dateIdx);
-      const allText = otherCells.join(" | ");
-      const teamsFound = matchKboTeamsInText(allText);
-      const cls = classifyKboLine(allText);
-
-      // 선수명: 팀명·날짜 아닌 셀 중 짧은 한글/영문
-      let player = "";
-      for (const c of otherCells) {
-        if (!c || c.length > 30) continue;
-        if (matchKboTeamsInText(c).length > 0) continue;
-        if (/^\d+$/.test(c)) continue;
-        if (/[가-힣]{2,}|[A-Z][a-z]+/.test(c)) {
-          if (!player || c.length < player.length) player = c;
-        }
-      }
-
-      // 트레이드만 2팀, 나머지 단일 팀
-      let fromTeam = null, toTeam = null;
-      if (cls.type === "trade") {
-        fromTeam = teamsFound[0] || null;
-        toTeam = teamsFound[1] || teamsFound[0] || null;
-      } else {
-        toTeam = teamsFound[0] || null;
-      }
-
-      out.push({
-        league: "kbo",
-        date,
-        type: cls.type,
-        typeLabel: cls.label,
-        player: player || "—",
-        fromTeam,
-        toTeam,
-        description: stripDateFromText(otherCells.join(" / ")).slice(0, 200),
-        link: buildPlayerSearchUrl("kbo", player, toTeam?.code),
-      });
-      stats.extracted++;
-    }
-  }
-
-  console.log("[KBO 스크래핑]", stats, "샘플 행:", sampleRows);
-  return { items: out.filter(tx => isInRange(tx.date, range)), stats };
+  console.log(`[KBO] 전체 ${data.rows.length}건 → 7일내 ${items.filter(tx => isInRange(tx.date, range)).length}건`);
+  return items.filter(tx => isInRange(tx.date, range));
 }
 
 /* ============================
@@ -1287,6 +1073,115 @@ function parseNpbPage(html, pageInfo, sourceUrl, defaultYear) {
 }
 
 /* ============================
+ * CPBL: cpbl.com.tw/player/trans (단일 소스, 번체 중문)
+ *   - 선수명: 번체 중문 그대로 표시
+ *   - 이벤트(異動原因): 한국어로 번역
+ *   - 날짜는 <td class="date" rowspan="N">로 묶여있어 rowspan 추적 필요
+ * ============================ */
+// 중국어 이벤트 라벨 → 한국어 매핑
+const CPBL_EVENT_MAP = [
+  { zh: "升一軍",       type: "selected", label: "콜업 (1군 등록)" },
+  { zh: "降二軍",       type: "optioned", label: "2군 강등" },
+  { zh: "新註冊",       type: "signed",   label: "신규 등록" },
+  { zh: "註冊",         type: "signed",   label: "신규 등록" },
+  { zh: "引退",         type: "retired",  label: "은퇴" },
+  { zh: "退休",         type: "retired",  label: "은퇴" },
+  { zh: "釋出",         type: "released", label: "방출" },
+  { zh: "戰力外",       type: "released", label: "전력외" },
+  { zh: "自由契約",     type: "released", label: "자유계약" },
+  { zh: "交易",         type: "trade",    label: "트레이드" },
+  { zh: "傷兵",         type: "il",       label: "부상자 명단" },
+  { zh: "復歸",         type: "returned", label: "복귀" },
+];
+function classifyCpblEvent(eventText) {
+  const t = (eventText || "").trim();
+  for (const r of CPBL_EVENT_MAP) {
+    if (t.includes(r.zh)) return { type: r.type, label: r.label };
+  }
+  return { type: "other", label: t || "기타" };
+}
+
+// CPBL 트랜잭션 테이블 파싱
+// 핵심: <td class="date" rowspan="N">로 날짜가 여러 행에 걸쳐있음 → 마지막 본 날짜를 추적
+// 컬럼: Date | 球員(선수) | 球隊(팀) | 異動原因(이벤트)
+function parseCpblRows(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const out = [];
+  const allTrs = [...doc.querySelectorAll("tr")];
+  let currentDate = null;
+
+  for (const row of allTrs) {
+    // td.date (rowspan 가능) 있으면 현재 날짜 갱신
+    const dateTd = row.querySelector("td.date");
+    if (dateTd) {
+      const iso = parseDateToISO(dateTd.textContent);
+      if (iso) currentDate = iso;
+    }
+    if (!currentDate) continue;
+
+    // 이 행의 모든 td 중 .date 제외한 것들
+    const nonDateTds = [...row.querySelectorAll("td")].filter(td => !td.classList.contains("date"));
+    if (nonDateTds.length < 2) continue;  // 헤더 또는 빈 행 스킵
+    const nonDateCells = nonDateTds.map(td => td.textContent.replace(/\s+/g, " ").trim());
+
+    // 선수 링크 (Acnt ID)
+    const playerLink = row.querySelector('a[href*="Acnt="]');
+    const acntMatch = playerLink?.getAttribute("href")?.match(/Acnt=(\d+)/);
+    const acnt = acntMatch ? acntMatch[1] : null;
+
+    // 컬럼 매핑: [선수, 팀, 이벤트]
+    const playerCell = nonDateCells[0] || "";
+    const teamCell   = nonDateCells[1] || "";
+    const eventCell  = nonDateCells[2] || nonDateCells[nonDateCells.length - 1] || "";
+
+    out.push({
+      date: currentDate,
+      playerCell,
+      teamCell,
+      eventCell,
+      acnt,
+    });
+  }
+  return out;
+}
+
+// CPBL 단일 소스: cpbl.com.tw (번체 중문)
+async function fetchCpblTransactions(range) {
+  const ZH = "https://cpbl.com.tw/player/trans";
+  let html;
+  try {
+    html = await fetchViaProxy(ZH);
+  } catch (e) {
+    throw new Error("CPBL 페이지 fetch 실패: " + e.message);
+  }
+
+  const rows = parseCpblRows(html);
+  console.log(`[CPBL] cpbl.com.tw: ${rows.length}건 파싱`);
+
+  const merged = rows.map(r => {
+    const team = matchCpblTeam(r.teamCell);
+    const cls = classifyCpblEvent(r.eventCell);
+    return {
+      league: "cpbl",
+      date: r.date,
+      type: cls.type,
+      typeLabel: cls.label,
+      player: r.playerCell || "—",
+      fromTeam: null,
+      toTeam: team,
+      description: "",
+      link: r.acnt
+        ? `https://cpbl.com.tw/team/person?Acnt=${r.acnt}`
+        : "https://cpbl.com.tw/player/trans",
+    };
+  });
+
+  const inRange = merged.filter(tx => isInRange(tx.date, range));
+  console.log(`[CPBL] 전체 ${merged.length}건 → 7일내 ${inRange.length}건`);
+  return inRange;
+}
+
+/* ============================
  * 렌더링
  * ============================ */
 function escapeHtml(s) {
@@ -1435,59 +1330,32 @@ async function refresh() {
   btn.innerHTML = `<span class="spinner"></span>갱신 중...`;
   meta.textContent = "이적·등록 데이터 수집 중...";
 
-  for (const lg of ["kbo", "mlb", "npb"]) {
-    document.getElementById(`list-${lg}`).innerHTML = `<div class="tx-loading"><span class="spinner"></span>불러오는 중...</div>`;
-    document.getElementById(`src-stat-${lg}`).textContent = "";
+  for (const lg of ["kbo", "mlb", "npb", "cpbl"]) {
+    const listEl = document.getElementById(`list-${lg}`);
+    if (listEl) listEl.innerHTML = `<div class="tx-loading"><span class="spinner"></span>불러오는 중...</div>`;
+    const statEl = document.getElementById(`src-stat-${lg}`);
+    if (statEl) statEl.textContent = "";
   }
 
   const totals = {};
 
-  // KBO — 완전 자동 폴백 체인:
-  //   1) Jina Reader (JS 렌더링 → 마크다운)
-  //   2) 직접 HTML 스크래핑
-  //   3) 둘 다 실패 시 사용자 paste 안내
+  // KBO — 풀 자동: 페이지의 공식 AJAX 엔드포인트를 CORS 프록시로 호출
+  // → JSON → 탭 구분 텍스트 → parseKboPastedText (수동 paste와 동일 파서)
   {
     const kboStatEl = document.getElementById("src-stat-kbo");
-    let success = false;
-
-    // ── 1) Jina Reader ──
     try {
-      const result = await fetchKboViaJina(range, kboStatEl);
-      if (result.items.length > 0 || result.stats.datedLines > 0) {
-        renderLeague("kbo", result.items);
-        totals.kbo = result.items.length;
-        document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
-        const s = result.stats;
-        kboStatEl.innerHTML = `<span class="ok">🤖 Jina Reader · 응답 ${(s.responseSize/1024).toFixed(1)}KB · 행 ${s.ocrLines} · 날짜行 ${s.datedLines} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
-        success = true;
-      }
+      const result = await fetchKboAuto(range, kboStatEl);
+      renderLeague("kbo", result.items);
+      totals.kbo = result.items.length;
+      document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
+      const s = result.stats;
+      kboStatEl.innerHTML = `<span class="ok">📋 자동감지 · 행 ${s.ocrLines} · 날짜行 ${s.datedLines} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
     } catch (e) {
-      console.warn("[KBO] Jina 실패 → HTML 스크래핑 시도:", e.message);
-    }
-
-    // ── 2) HTML 스크래핑 폴백 ──
-    if (!success) {
-      try {
-        const result = await fetchKboTrades(range);
-        if (result.items.length > 0) {
-          renderLeague("kbo", result.items);
-          totals.kbo = result.items.length;
-          document.getElementById("count-kbo").textContent = `${result.items.length}건 (최근 7일)`;
-          const s = result.stats;
-          kboStatEl.innerHTML = `<span class="ok">📄 HTML · 테이블 ${s.tables} · 행 ${s.rows} · 날짜行 ${s.dated} · 추출 ${s.extracted} → 7일내 ${result.items.length}</span>`;
-          success = true;
-        }
-      } catch (e) {
-        console.warn("[KBO] HTML 스크래핑도 실패:", e.message);
-      }
-    }
-
-    // ── 3) 모두 실패 → paste 안내 ──
-    if (!success) {
+      console.error("[KBO] 자동 수집 실패:", e);
       document.getElementById("list-kbo").innerHTML =
-        `<div class="tx-empty">자동 수집 실패 (Jina + HTML 모두).<br><br>
+        `<div class="tx-empty">자동 수집 실패: ${escapeHtml(e.message || "")}.<br><br>
          👉 KBO 페이지에서 표 영역을 드래그·복사한 뒤<br>
-         이 페이지 어디든 <b>Ctrl+V (Cmd+V)</b> 누르면 자동 분석됩니다.</div>`;
+         이 페이지 어디든 <b>Ctrl+V (Cmd+V)</b> 누르면 분석됩니다.</div>`;
       kboStatEl.innerHTML = `<span class="err">자동 수집 실패 → 클립보드 paste 권장</span>`;
       totals.kbo = 0;
     }
@@ -1535,10 +1403,24 @@ async function refresh() {
     totals.npb = 0;
   }
 
+  // CPBL (+ 필터 적용, 선수명은 번체 중문 유지)
+  try {
+    const items = await fetchCpblTransactions(range);
+    window._cpblAllItems = items;
+    applyCpblFilter();
+    totals.cpbl = items.length;
+    document.getElementById("src-stat-cpbl").innerHTML = `<span class="ok">cpbl.com.tw · ${items.length}건 (최근 7일)</span>`;
+  } catch (e) {
+    console.error("CPBL 실패:", e);
+    document.getElementById("list-cpbl").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
+    document.getElementById("src-stat-cpbl").innerHTML = `<span class="err">실패</span>`;
+    totals.cpbl = 0;
+  }
+
   btn.disabled = false;
   btn.textContent = "🔄 리그 통합 갱신";
   meta.textContent = `마지막 갱신: ${new Date().toLocaleString("ko-KR")}`;
-  showToast(`최근 7일 이적·등록 · KBO ${totals.kbo || 0} / MLB ${totals.mlb || 0} / NPB ${totals.npb || 0}건`);
+  showToast(`최근 7일 이적·등록 · KBO ${totals.kbo || 0} / MLB ${totals.mlb || 0} / NPB ${totals.npb || 0} / CPBL ${totals.cpbl || 0}건`);
 }
 
 /* ============================
@@ -1639,10 +1521,15 @@ const DFA_LABELS    = new Set(["DFA 지정"]);
 
 function applyMlbFilter() {
   const items = window._mlbAllItems || [];
-  const showCallup = document.getElementById("filter-mlb-callup").checked;
-  const showIL = document.getElementById("filter-mlb-il").checked;
-  const showMinor = document.getElementById("filter-mlb-minor").checked;
-  const showDfa = document.getElementById("filter-mlb-dfa").checked;
+  const c = document.getElementById("filter-mlb-callup");
+  const i = document.getElementById("filter-mlb-il");
+  const m = document.getElementById("filter-mlb-minor");
+  const d = document.getElementById("filter-mlb-dfa");
+  if (!c || !i || !m || !d) { console.warn("MLB 필터 요소 없음"); renderLeague("mlb", items); return; }
+  const showCallup = c.checked;
+  const showIL = i.checked;
+  const showMinor = m.checked;
+  const showDfa = d.checked;
 
   const filtered = items.filter(it => {
     if (!showCallup && CALLUP_LABELS.has(it.typeLabel)) return false;
@@ -1661,13 +1548,53 @@ function applyMlbFilter() {
   }
 }
 
-document.getElementById("filter-mlb-callup").addEventListener("change", applyMlbFilter);
-document.getElementById("filter-mlb-il").addEventListener("change", applyMlbFilter);
-document.getElementById("filter-mlb-minor").addEventListener("change", applyMlbFilter);
-document.getElementById("filter-mlb-dfa").addEventListener("change", applyMlbFilter);
+// null-safe 등록: 한 요소라도 없을 때 이후 코드가 멈추는 걸 방지
+const _bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+_bind("filter-mlb-callup", "change", applyMlbFilter);
+_bind("filter-mlb-il", "change", applyMlbFilter);
+_bind("filter-mlb-minor", "change", applyMlbFilter);
+_bind("filter-mlb-dfa", "change", applyMlbFilter);
 
-document.getElementById("refreshBtn").addEventListener("click", refresh);
-window.addEventListener("DOMContentLoaded", refresh);
+/* ============================
+ * CPBL 필터 (콜업 / 2군 강등)
+ * ============================ */
+const CPBL_CALLUP_LABELS = new Set(["콜업 (1군 등록)"]);
+const CPBL_MINOR_LABELS  = new Set(["2군 강등"]);
+
+function applyCpblFilter() {
+  const items = window._cpblAllItems || [];
+  const cEl = document.getElementById("filter-cpbl-callup");
+  const mEl = document.getElementById("filter-cpbl-minor");
+  if (!cEl || !mEl) { console.warn("CPBL 필터 요소 없음"); return; }
+  const showCallup = cEl.checked;
+  const showMinor  = mEl.checked;
+
+  const filtered = items.filter(it => {
+    if (!showCallup && CPBL_CALLUP_LABELS.has(it.typeLabel)) return false;
+    if (!showMinor  && CPBL_MINOR_LABELS.has(it.typeLabel))  return false;
+    return true;
+  });
+
+  renderLeague("cpbl", filtered);
+  const countEl = document.getElementById("count-cpbl");
+  if (showCallup && showMinor) {
+    countEl.textContent = `${items.length}건 (최근 7일)`;
+  } else {
+    countEl.textContent = `${filtered.length} / ${items.length}건 (필터 적용)`;
+  }
+}
+
+_bind("filter-cpbl-callup", "change", applyCpblFilter);
+_bind("filter-cpbl-minor", "change", applyCpblFilter);
+
+_bind("refreshBtn", "click", refresh);
+// DOM이 이미 파싱 완료 상태(스크립트가 body 끝에 있음)면 즉시 실행, 아니면 이벤트 대기
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", refresh);
+} else {
+  // 비동기로 호출해 현재 스크립트가 끝난 후 실행
+  setTimeout(refresh, 0);
+}
 </script>
 </body>
 </html>
