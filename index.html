@@ -417,7 +417,7 @@
   <section class="league" data-league="cpbl">
     <h2><span class="dot"></span>CPBL 대만프로야구<span class="count" id="count-cpbl">0건</span></h2>
     <div class="src-info">
-      <span>소스: <b>cpbl.com.tw/player/trans</b></span>
+      <span>소스: <b>cpbl.com.tw + en.cpbl.com.tw</b> (선수명 중문+영문)</span>
       <span id="src-stat-cpbl"></span>
     </div>
     <div class="filter-row">
@@ -804,6 +804,62 @@ function parseDateToISO(s, defaultYear) {
   }
   return null;
 }
+// 카타카나 → 헵번식 로마자 변환 (NPB 외국인 선수명용)
+// 가나 문자가 아닌 한자/히라가나는 변환하지 않음
+const KANA_COMPOUND = {
+  "キャ":"kya","キュ":"kyu","キョ":"kyo","シャ":"sha","シュ":"shu","ショ":"sho",
+  "チャ":"cha","チュ":"chu","チョ":"cho","ニャ":"nya","ニュ":"nyu","ニョ":"nyo",
+  "ヒャ":"hya","ヒュ":"hyu","ヒョ":"hyo","ミャ":"mya","ミュ":"myu","ミョ":"myo",
+  "リャ":"rya","リュ":"ryu","リョ":"ryo","ギャ":"gya","ギュ":"gyu","ギョ":"gyo",
+  "ジャ":"ja","ジュ":"ju","ジョ":"jo","ビャ":"bya","ビュ":"byu","ビョ":"byo",
+  "ピャ":"pya","ピュ":"pyu","ピョ":"pyo","ファ":"fa","フィ":"fi","フェ":"fe","フォ":"fo",
+  "ヴァ":"va","ヴィ":"vi","ヴェ":"ve","ヴォ":"vo","ティ":"ti","ディ":"di","トゥ":"tu","ドゥ":"du",
+};
+const KANA_SINGLE = {
+  "ア":"a","イ":"i","ウ":"u","エ":"e","オ":"o",
+  "カ":"ka","キ":"ki","ク":"ku","ケ":"ke","コ":"ko",
+  "ガ":"ga","ギ":"gi","グ":"gu","ゲ":"ge","ゴ":"go",
+  "サ":"sa","シ":"shi","ス":"su","セ":"se","ソ":"so",
+  "ザ":"za","ジ":"ji","ズ":"zu","ゼ":"ze","ゾ":"zo",
+  "タ":"ta","チ":"chi","ツ":"tsu","テ":"te","ト":"to",
+  "ダ":"da","ヂ":"ji","ヅ":"zu","デ":"de","ド":"do",
+  "ナ":"na","ニ":"ni","ヌ":"nu","ネ":"ne","ノ":"no",
+  "ハ":"ha","ヒ":"hi","フ":"fu","ヘ":"he","ホ":"ho",
+  "バ":"ba","ビ":"bi","ブ":"bu","ベ":"be","ボ":"bo",
+  "パ":"pa","ピ":"pi","プ":"pu","ペ":"pe","ポ":"po",
+  "マ":"ma","ミ":"mi","ム":"mu","メ":"me","モ":"mo",
+  "ヤ":"ya","ユ":"yu","ヨ":"yo",
+  "ラ":"ra","リ":"ri","ル":"ru","レ":"re","ロ":"ro",
+  "ワ":"wa","ヲ":"wo","ン":"n","ヴ":"vu",
+  "ャ":"ya","ュ":"yu","ョ":"yo","ッ":"",
+};
+function katakanaToRomaji(text) {
+  if (!text) return "";
+  // 카타카나·미들닷·장음·공백만으로 구성된 경우만 변환 (한자/히라가나는 처리 안 함)
+  if (!/^[゠-ヿ\s・]+$/.test(text)) return "";
+  let out = "", i = 0;
+  while (i < text.length) {
+    const two = text.substr(i, 2);
+    if (KANA_COMPOUND[two]) { out += KANA_COMPOUND[two]; i += 2; continue; }
+    const ch = text[i];
+    if (ch === "ー") { // 장음 — 직전 모음 반복
+      const last = out[out.length - 1];
+      if ("aiueo".includes(last)) out += last;
+      i++; continue;
+    }
+    if (ch === "ッ") { // 촉음 — 다음 자음 중복
+      const next = KANA_SINGLE[text[i+1]] || "";
+      if (next && !"aiueo".includes(next[0])) out += next[0];
+      i++; continue;
+    }
+    if (ch === "・" || ch === " ") { out += " "; i++; continue; }
+    if (KANA_SINGLE[ch] !== undefined) { out += KANA_SINGLE[ch]; i++; continue; }
+    i++;
+  }
+  // 공백 단위로 첫 글자 대문자화
+  return out.trim().split(/\s+/).map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
+}
+
 function isInRange(isoDate, range) {
   if (!isoDate) return false;
   const d = new Date(isoDate + "T12:00:00");
@@ -1091,12 +1147,17 @@ function parseNpbPage(html, pageInfo, sourceUrl, defaultYear) {
 
       const fromT = pageInfo.type === "trade" ? teamsFound[0] || null : null;
       const toT = pageInfo.type === "trade" ? (teamsFound[1] || teamsFound[0]) : teamsFound[0] || null;
+      // 카타카나 선수명(외국인) → 로마자 변환 시도 → "カタカナ(ROMAJI)" 형식
+      const romaji = katakanaToRomaji(player || "");
+      const displayPlayer = (romaji && romaji.toUpperCase() !== (player || "").toUpperCase())
+        ? `${player}(${romaji.toUpperCase()})`
+        : (player || "—");
       out.push({
         league: "npb",
         date,
         type: pageInfo.type,
         typeLabel: pageInfo.typeLabel,
-        player: player || "—",
+        player: displayPlayer,
         fromTeam: fromT,
         toTeam: toT,
         description: otherCells.join(" / ").slice(0, 200),
@@ -1114,27 +1175,50 @@ function parseNpbPage(html, pageInfo, sourceUrl, defaultYear) {
  *   - 이벤트(異動原因): 한국어로 번역
  *   - 날짜는 <td class="date" rowspan="N">로 묶여있어 rowspan 추적 필요
  * ============================ */
-// 중국어 이벤트 라벨 → 한국어 매핑
+// 중국어 이벤트 라벨 → 한국어 매핑 (긴 phrase 우선 매칭)
 const CPBL_EVENT_MAP = [
+  // 구체적 phrase 먼저
+  { zh: "合約所屬",     type: "signed",   label: "계약 소속" },
+  { zh: "解除合約",     type: "released", label: "계약 해지" },
+  { zh: "簽約",         type: "signed",   label: "계약 체결" },
+  { zh: "解約",         type: "released", label: "계약 해지" },
+  { zh: "重新登錄",     type: "selected", label: "재등록" },
+  { zh: "外籍球員登錄", type: "signed",   label: "외국인선수 등록" },
+  { zh: "育成選手登錄", type: "signed",   label: "육성선수 등록" },
+  { zh: "支配下登錄",   type: "selected", label: "지배하 등록" },
+  { zh: "新註冊",       type: "signed",   label: "신규 등록" },
+  { zh: "註冊",         type: "signed",   label: "등록" },
   { zh: "升一軍",       type: "selected", label: "콜업 (1군 등록)" },
   { zh: "降二軍",       type: "optioned", label: "2군 강등" },
-  { zh: "新註冊",       type: "signed",   label: "신규 등록" },
-  { zh: "註冊",         type: "signed",   label: "신규 등록" },
-  { zh: "引退",         type: "retired",  label: "은퇴" },
-  { zh: "退休",         type: "retired",  label: "은퇴" },
-  { zh: "釋出",         type: "released", label: "방출" },
   { zh: "戰力外",       type: "released", label: "전력외" },
   { zh: "自由契約",     type: "released", label: "자유계약" },
-  { zh: "交易",         type: "trade",    label: "트레이드" },
+  { zh: "傷兵名單",     type: "il",       label: "부상자 명단" },
   { zh: "傷兵",         type: "il",       label: "부상자 명단" },
+  { zh: "受傷",         type: "il",       label: "부상" },
   { zh: "復歸",         type: "returned", label: "복귀" },
+  { zh: "歸隊",         type: "returned", label: "복귀" },
+  { zh: "移籍",         type: "trade",    label: "이적" },
+  { zh: "借將",         type: "signed",   label: "임대 영입" },
+  { zh: "交易",         type: "trade",    label: "트레이드" },
+  { zh: "釋出",         type: "released", label: "방출" },
+  { zh: "退休",         type: "retired",  label: "은퇴" },
+  { zh: "引退",         type: "retired",  label: "은퇴" },
+  { zh: "出戰名單",     type: "selected", label: "출장명단 등록" },
+  { zh: "停權",         type: "il",       label: "출장정지" },
+  { zh: "禁賽",         type: "il",       label: "출전정지" },
+  { zh: "異動",         type: "other",    label: "변동" },
 ];
+// 길이 내림차순 정렬 (긴 phrase가 먼저 매칭되도록)
+CPBL_EVENT_MAP.sort((a, b) => b.zh.length - a.zh.length);
+
 function classifyCpblEvent(eventText) {
   const t = (eventText || "").trim();
   for (const r of CPBL_EVENT_MAP) {
     if (t.includes(r.zh)) return { type: r.type, label: r.label };
   }
-  return { type: "other", label: t || "기타" };
+  // 매핑 안 됨 → 원문에 한글이 없으면 "기타"로, 아니면 원문 유지
+  const hasKorean = /[가-힣]/.test(t);
+  return { type: "other", label: hasKorean ? t : (t ? `${t} (미번역)` : "기타") };
 }
 
 // CPBL 트랜잭션 테이블 파싱
@@ -1183,37 +1267,56 @@ function parseCpblRows(html) {
 
 // CPBL 단일 소스: cpbl.com.tw (번체 중문)
 async function fetchCpblTransactions(range) {
+  // ZH(번체) + EN 두 페이지 fetch → 선수명 "중문(영문)" 표시
   const ZH = "https://cpbl.com.tw/player/trans";
-  let html;
-  try {
-    html = await fetchViaProxy(ZH);
-  } catch (e) {
-    throw new Error("CPBL 페이지 fetch 실패: " + e.message);
+  const EN = "https://en.cpbl.com.tw/player/trans";
+
+  const [zhHtml, enHtml] = await Promise.all([
+    fetchViaProxy(ZH).catch(e => { console.warn("[CPBL ZH] 실패:", e.message); return ""; }),
+    fetchViaProxy(EN).catch(e => { console.warn("[CPBL EN] 실패:", e.message); return ""; }),
+  ]);
+  if (!zhHtml && !enHtml) throw new Error("CPBL 양쪽 페이지 모두 fetch 실패");
+
+  const zhRows = zhHtml ? parseCpblRows(zhHtml) : [];
+  const enRows = enHtml ? parseCpblRows(enHtml) : [];
+
+  // Acnt ID로 매칭하는 인덱스 구성 (행 순서가 같지 않을 수도 있어 ID 기반이 안전)
+  const enByAcnt = new Map();
+  for (const er of enRows) {
+    if (er.acnt) enByAcnt.set(er.acnt, er);
   }
 
-  const rows = parseCpblRows(html);
-  console.log(`[CPBL] cpbl.com.tw: ${rows.length}건 파싱`);
-
-  const merged = rows.map(r => {
+  // ZH 페이지 기준 (번체 중문이 원본). EN 매칭은 Acnt 우선, 없으면 행 인덱스 폴백
+  const baseRows = zhRows.length > 0 ? zhRows : enRows;
+  const merged = baseRows.map((r, idx) => {
     const team = matchCpblTeam(r.teamCell);
     const cls = classifyCpblEvent(r.eventCell);
+    // 영문명 매칭: Acnt 우선 → 같은 인덱스 폴백
+    const enRow = (r.acnt && enByAcnt.get(r.acnt)) || enRows[idx];
+    const zhName = r.playerCell || "";
+    const enName = (enRow?.playerCell || "").trim();
+    // 표시 형식: "중문(영문)" (영문 없으면 중문만)
+    const displayName = (zhName && enName && zhName !== enName)
+      ? `${zhName}(${enName})`
+      : (zhName || enName || "—");
+
     return {
       league: "cpbl",
       date: r.date,
       type: cls.type,
       typeLabel: cls.label,
-      player: r.playerCell || "—",
+      player: displayName,
       fromTeam: null,
       toTeam: team,
       description: "",
       link: r.acnt
-        ? `https://cpbl.com.tw/team/person?Acnt=${r.acnt}`
-        : "https://cpbl.com.tw/player/trans",
+        ? `https://en.cpbl.com.tw/team/person?Acnt=${r.acnt}`
+        : "https://en.cpbl.com.tw/player/trans",
     };
   });
 
   const inRange = merged.filter(tx => isInRange(tx.date, range));
-  console.log(`[CPBL] 전체 ${merged.length}건 → 7일내 ${inRange.length}건`);
+  console.log(`[CPBL] zh ${zhRows.length}건 + en ${enRows.length}건 → 병합 ${merged.length} (7일내 ${inRange.length})`);
   return inRange;
 }
 
