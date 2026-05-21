@@ -25,10 +25,35 @@
     --t-il: #f43f5e;
     --error: #f87171;
   }
+  /* KBO Dia Gothic — 전체 페이지 기본 폰트 */
+  @font-face {
+    font-family: "KBO Dia Gothic";
+    src: url("fonts/KBO-Dia-Gothic_light.woff") format("woff");
+    font-weight: 300;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "KBO Dia Gothic";
+    src: url("fonts/KBO-Dia-Gothic_medium.woff") format("woff");
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "KBO Dia Gothic";
+    src: url("fonts/KBO-Dia-Gothic_bold.woff") format("woff");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+
   * { box-sizing: border-box; }
+  body, button, input, select, textarea {
+    font-family: "KBO Dia Gothic", -apple-system, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
+  }
   body {
     margin: 0;
-    font-family: -apple-system, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
