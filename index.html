@@ -874,21 +874,9 @@ function isInRange(isoDate, range) {
  * ============================ */
 
 // KBO는 모든 공개 CORS 프록시 IP를 차단하고 Referer 헤더를 요구 → 브라우저에서 직접 호출 불가
-// 해결: 로컬 캐시 JSON (refresh-kbo.sh 로 갱신) → 그 다음 프록시 → 직접 (이상 우선 순)
+// 해결: 웹앱 진입시 항상 최신 정보 갱신 시도 → 실패시 localStorage → 로컬 캐시 JSON (이상 우선 순)
 async function fetchKboJsonViaGet(apiUrl) {
-  // 1) 로컬 캐시 우선 — refresh-kbo.sh로 미리 받아둔 파일
-  try {
-    const res = await fetch("kbo-cache.json", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.rows?.length) {
-        console.log("[KBO ✓ local cache]", data.rows.length, "rows");
-        return data;
-      }
-    }
-  } catch (e) { /* 캐시 없거나 file:// 등 → 프록시 시도 */ }
-
-  // 2) 직접 호출 (CORS 허용 환경에서만 동작)
+  // 1) 직접 호출 시도 (CORS 허용 환경에서만 동작) — 웹앱 진입시마다 최신 정보 갱신
   try {
     const res = await fetch(apiUrl, {
       cache: "no-store",
@@ -897,11 +885,15 @@ async function fetchKboJsonViaGet(apiUrl) {
     if (res.ok) {
       const data = await res.json();
       console.log("[KBO ✓ direct]", data.rows?.length, "rows");
+      // 성공 시 localStorage에 저장
+      try {
+        localStorage.setItem("kbo_cache", JSON.stringify({ data, timestamp: Date.now() }));
+      } catch (e) { console.warn("[KBO] localStorage 저장 실패:", e.message); }
       return data;
     }
   } catch (e) { /* 프록시로 폴백 */ }
 
-  // 3~5) 프록시 폴백 (KBO가 차단할 수 있지만 만약을 위해)
+  // 2~4) 프록시 폴백 — 최신 정보 갱신 시도
   const proxies = [
     { name: "corsproxy.io",   url: `https://corsproxy.io/?${encodeURIComponent(apiUrl)}` },
     { name: "allorigins/raw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}` },
@@ -919,13 +911,42 @@ async function fetchKboJsonViaGet(apiUrl) {
       try {
         const data = JSON.parse(text);
         console.log(`[KBO ✓ ${p.name}]`, data.rows?.length, "rows");
+        // 성공 시 localStorage에 저장
+        try {
+          localStorage.setItem("kbo_cache", JSON.stringify({ data, timestamp: Date.now() }));
+        } catch (e) { console.warn("[KBO] localStorage 저장 실패:", e.message); }
         return data;
       } catch (e) { console.warn(`[KBO ✗ ${p.name}] JSON parse 실패`); }
     } catch (e) {
       console.warn(`[KBO ✗ ${p.name}]`, e.message);
     }
   }
-  throw new Error("KBO 데이터 fetch 실패 — refresh-kbo.sh 로 캐시를 갱신해주세요");
+
+  // 5) localStorage 폴백
+  try {
+    const cached = localStorage.getItem("kbo_cache");
+    if (cached) {
+      const { data } = JSON.parse(cached);
+      if (data?.rows?.length) {
+        console.log("[KBO ✓ localStorage]", data.rows.length, "rows");
+        return data;
+      }
+    }
+  } catch (e) { console.warn("[KBO] localStorage 읽기 실패:", e.message); }
+
+  // 6) 로컬 캐시 파일 폴백 — refresh-kbo.sh로 미리 받아둔 파일
+  try {
+    const res = await fetch("kbo-cache.json", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.rows?.length) {
+        console.log("[KBO ✓ local cache file]", data.rows.length, "rows");
+        return data;
+      }
+    }
+  } catch (e) { /* 캐시 없거나 file:// 등 */ }
+
+  throw new Error("KBO 데이터 fetch 실패 — 인터넷 연결 상태를 확인하세요");
 }
 
 // MLB·NPB·CPBL과 동일한 시그니처: range → items[]
