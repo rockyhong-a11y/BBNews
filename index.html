@@ -873,10 +873,19 @@ function isInRange(isoDate, range) {
  *   - 결과 데이터 구조와 렌더링 흐름이 다른 리그와 일치
  * ============================ */
 
-// KBO는 모든 공개 CORS 프록시 IP를 차단하고 Referer 헤더를 요구 → 브라우저에서 직접 호출 불가
-// 해결: 웹앱 진입시 항상 최신 정보 갱신 시도 → 실패시 localStorage → 로컬 캐시 JSON (이상 우선 순)
-async function fetchKboJsonViaGet(apiUrl) {
-  // 1) 직접 호출 시도 (CORS 허용 환경에서만 동작) — 웹앱 진입시마다 최신 정보 갱신
+// KBO는 모든 공개 CORS 프록시 IP를 차단하고 Referer 헤더를 요구 → 최신 정보 갱신에 다중 전략
+// 해결: 우선순위: 신선한 API → localStorage (1시간 만료) → 로컬 캐시 파일
+async function fetchKboJsonViaGet(apiUrl, forceRefresh = false) {
+  const cacheKey = "kbo_cache";
+  const cacheTTL = 60 * 60 * 1000; // 1시간
+
+  // 강제 갱신시 localStorage 캐시 무효화
+  if (forceRefresh) {
+    try { localStorage.removeItem(cacheKey); } catch (e) {}
+    console.log("[KBO] 강제 갱신 모드 — 캐시 무효화됨");
+  }
+
+  // 1) 직접 호출 시도 (CORS 허용 환경에서만 동작)
   try {
     const res = await fetch(apiUrl, {
       cache: "no-store",
@@ -885,25 +894,26 @@ async function fetchKboJsonViaGet(apiUrl) {
     if (res.ok) {
       const data = await res.json();
       console.log("[KBO ✓ direct]", data.rows?.length, "rows");
-      // 성공 시 localStorage에 저장
       try {
-        localStorage.setItem("kbo_cache", JSON.stringify({ data, timestamp: Date.now() }));
+        localStorage.setItem(cacheKey, JSON.stringify({ data, timestamp: Date.now() }));
       } catch (e) { console.warn("[KBO] localStorage 저장 실패:", e.message); }
       return data;
     }
-  } catch (e) { /* 프록시로 폴백 */ }
+  } catch (e) { console.warn("[KBO] 직접 호출 실패:", e.message); }
 
-  // 2~4) 프록시 폴백 — 최신 정보 갱신 시도
+  // 2~6) 다양한 CORS 프록시 시도
   const proxies = [
-    { name: "corsproxy.io",   url: `https://corsproxy.io/?${encodeURIComponent(apiUrl)}` },
-    { name: "allorigins/raw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}` },
-    { name: "codetabs",       url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(apiUrl)}` },
+    { name: "api.codetabs.com",    url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(apiUrl)}` },
+    { name: "api.allorigins.win",  url: `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}` },
+    { name: "corsproxy.io",        url: `https://corsproxy.io/?${encodeURIComponent(apiUrl)}` },
+    { name: "cors-anywhere.herokuapp.com", url: `https://cors-anywhere.herokuapp.com/${apiUrl.replace(/^https?:\/\//, "")}` },
+    { name: "thingproxy.freeboard.io", url: `https://thingproxy.freeboard.io/fetch/${apiUrl}` },
   ];
 
   for (const p of proxies) {
     try {
       const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 15000);
+      const tid = setTimeout(() => ctrl.abort(), 12000);
       const res = await fetch(p.url, { cache: "no-store", signal: ctrl.signal });
       clearTimeout(tid);
       if (!res.ok) { console.warn(`[KBO ✗ ${p.name}] HTTP ${res.status}`); continue; }
@@ -911,46 +921,48 @@ async function fetchKboJsonViaGet(apiUrl) {
       try {
         const data = JSON.parse(text);
         console.log(`[KBO ✓ ${p.name}]`, data.rows?.length, "rows");
-        // 성공 시 localStorage에 저장
         try {
-          localStorage.setItem("kbo_cache", JSON.stringify({ data, timestamp: Date.now() }));
-        } catch (e) { console.warn("[KBO] localStorage 저장 실패:", e.message); }
+          localStorage.setItem(cacheKey, JSON.stringify({ data, timestamp: Date.now() }));
+        } catch (e) { console.warn("[KBO] localStorage 저장 실패"); }
         return data;
       } catch (e) { console.warn(`[KBO ✗ ${p.name}] JSON parse 실패`); }
     } catch (e) {
-      console.warn(`[KBO ✗ ${p.name}]`, e.message);
+      console.warn(`[KBO ✗ ${p.name}]`, e.message?.slice(0, 50));
     }
   }
 
-  // 5) localStorage 폴백
+  // 7) localStorage 폴백 (1시간 이내 캐시만)
   try {
-    const cached = localStorage.getItem("kbo_cache");
+    const cached = localStorage.getItem(cacheKey);
     if (cached) {
-      const { data } = JSON.parse(cached);
-      if (data?.rows?.length) {
-        console.log("[KBO ✓ localStorage]", data.rows.length, "rows");
+      const { data, timestamp } = JSON.parse(cached);
+      const age = Date.now() - timestamp;
+      if (data?.rows?.length && age < cacheTTL) {
+        console.log(`[KBO ✓ localStorage]`, data.rows.length, "rows (캐시 나이:", Math.round(age/60000), "분)");
         return data;
+      } else if (data?.rows?.length) {
+        console.log(`[KBO ⚠ localStorage 만료]`, Math.round(age/60000), "분 경과`);
       }
     }
   } catch (e) { console.warn("[KBO] localStorage 읽기 실패:", e.message); }
 
-  // 6) 로컬 캐시 파일 폴백 — refresh-kbo.sh로 미리 받아둔 파일
+  // 8) 로컬 캐시 파일 폴백 (최후의 수단)
   try {
     const res = await fetch("kbo-cache.json", { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       if (data?.rows?.length) {
-        console.log("[KBO ✓ local cache file]", data.rows.length, "rows");
+        console.log("[KBO ✓ local file]", data.rows.length, "rows (오프라인 모드)");
         return data;
       }
     }
-  } catch (e) { /* 캐시 없거나 file:// 등 */ }
+  } catch (e) { /* 캐시 없거나 file:// */ }
 
-  throw new Error("KBO 데이터 fetch 실패 — 인터넷 연결 상태를 확인하세요");
+  throw new Error("KBO 데이터 fetch 실패 — 인터넷 연결을 확인하고 새로고침(F5)하세요");
 }
 
 // MLB·NPB·CPBL과 동일한 시그니처: range → items[]
-async function fetchKboTransactions(range) {
+async function fetchKboTransactions(range, forceRefresh = false) {
   const year = new Date().getFullYear();
   // ASMX 메서드를 GET 쿼리 스트링으로 호출 (서버가 GET·POST 둘 다 허용)
   const params = new URLSearchParams({
@@ -960,7 +972,7 @@ async function fetchKboTransactions(range) {
   }).toString();
   const apiUrl = `https://www.koreabaseball.com/ws/Player.asmx/GetTradeList?${params}`;
 
-  const data = await fetchKboJsonViaGet(apiUrl);
+  const data = await fetchKboJsonViaGet(apiUrl, forceRefresh);
   if (!data?.rows) throw new Error("KBO 응답에 rows 없음");
 
   // 각 row의 셀 배열: [날짜, 항목, 팀, 선수(포지션), 비고]
@@ -1494,7 +1506,7 @@ function showToast(msg) {
 /* ============================
  * 메인
  * ============================ */
-async function refresh() {
+async function refresh(forceRefresh = false) {
   const btn = document.getElementById("refreshBtn");
   const meta = document.getElementById("lastUpdated");
   const range = getRange();
@@ -1502,7 +1514,7 @@ async function refresh() {
 
   btn.disabled = true;
   btn.innerHTML = `<span class="spinner"></span>갱신 중...`;
-  meta.textContent = "이적·등록 데이터 수집 중...";
+  meta.textContent = forceRefresh ? "🔄 캐시 무효화 후 새로 갱신 중..." : "이적·등록 데이터 수집 중...";
 
   for (const lg of ["kbo", "mlb", "npb", "cpbl"]) {
     const listEl = document.getElementById(`list-${lg}`);
@@ -1513,9 +1525,9 @@ async function refresh() {
 
   const totals = {};
 
-  // KBO — MLB·NPB·CPBL과 동일 패턴: fetchKboTransactions(range) → items 직접 반환
+  // KBO — MLB·NPB·CPBL과 동일 패턴: fetchKboTransactions(range, forceRefresh) → items 직접 반환
   try {
-    const items = await fetchKboTransactions(range);
+    const items = await fetchKboTransactions(range, forceRefresh);
     renderLeague("kbo", items);
     totals.kbo = items.length;
     document.getElementById("count-kbo").textContent = `${items.length}건 (최근 7일)`;
@@ -1753,7 +1765,19 @@ function applyCpblFilter() {
 _bind("filter-cpbl-callup", "change", applyCpblFilter);
 _bind("filter-cpbl-minor", "change", applyCpblFilter);
 
-_bind("refreshBtn", "click", refresh);
+// 갱신 버튼: 일반 클릭 = 정상 갱신, Shift+클릭 = 강제 갱신(캐시 무효화)
+const refreshBtn = document.getElementById("refreshBtn");
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", (e) => {
+    const forceRefresh = e.shiftKey;
+    if (forceRefresh) {
+      e.preventDefault();
+      console.log("🔄 강제 갱신 모드 활성화 (캐시 무효화)");
+    }
+    refresh(forceRefresh);
+  });
+}
+
 // DOM이 이미 파싱 완료 상태(스크립트가 body 끝에 있음)면 즉시 실행, 아니면 이벤트 대기
 if (document.readyState === "loading") {
   window.addEventListener("DOMContentLoaded", refresh);
