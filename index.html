@@ -365,7 +365,7 @@
   <section class="league" data-league="kbo">
     <h2><span class="dot"></span>KBO 한국프로야구<span class="count" id="count-kbo">0건</span></h2>
     <div class="src-info">
-      <span>소스: <b>koreabaseball.com/Player/Trade.aspx</b></span>
+      <span>소스: <b>kbo-cache.json</b> (GitHub Actions 자동 갱신)</span>
       <span id="src-stat-kbo"></span>
     </div>
     <div class="paste-wrap">
@@ -868,100 +868,20 @@ function isInRange(isoDate, range) {
 
 /* ============================
  * KBO: koreabaseball.com/Player/Trade.aspx
- *   MLB·NPB·CPBL과 동일한 패턴 적용:
- *   - fetchKboTransactions(range) → items 배열 직접 반환
- *   - 결과 데이터 구조와 렌더링 흐름이 다른 리그와 일치
+ *   GitHub Actions가 주기적으로 kbo-cache.json 갱신 → 항상 최신 데이터
+ *   프론트는 kbo-cache.json만 로드 (캐시 없이 매번 새로 요청)
  * ============================ */
-
-// KBO는 모든 공개 CORS 프록시 IP를 차단하고 Referer 헤더를 요구 → 브라우저에서 직접 호출 불가
-// 해결: 웹앱 진입시 항상 최신 정보 갱신 시도 → 실패시 localStorage → 로컬 캐시 JSON (이상 우선 순)
-async function fetchKboJsonViaGet(apiUrl) {
-  // 1) 직접 호출 시도 (CORS 허용 환경에서만 동작) — 웹앱 진입시마다 최신 정보 갱신
-  try {
-    const res = await fetch(apiUrl, {
-      cache: "no-store",
-      headers: { "Referer": "https://www.koreabaseball.com/Player/Trade.aspx" },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      console.log("[KBO ✓ direct]", data.rows?.length, "rows");
-      // 성공 시 localStorage에 저장
-      try {
-        localStorage.setItem("kbo_cache", JSON.stringify({ data, timestamp: Date.now() }));
-      } catch (e) { console.warn("[KBO] localStorage 저장 실패:", e.message); }
-      return data;
-    }
-  } catch (e) { /* 프록시로 폴백 */ }
-
-  // 2~4) 프록시 폴백 — 최신 정보 갱신 시도
-  const proxies = [
-    { name: "corsproxy.io",   url: `https://corsproxy.io/?${encodeURIComponent(apiUrl)}` },
-    { name: "allorigins/raw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}` },
-    { name: "codetabs",       url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(apiUrl)}` },
-  ];
-
-  for (const p of proxies) {
-    try {
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(p.url, { cache: "no-store", signal: ctrl.signal });
-      clearTimeout(tid);
-      if (!res.ok) { console.warn(`[KBO ✗ ${p.name}] HTTP ${res.status}`); continue; }
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        console.log(`[KBO ✓ ${p.name}]`, data.rows?.length, "rows");
-        // 성공 시 localStorage에 저장
-        try {
-          localStorage.setItem("kbo_cache", JSON.stringify({ data, timestamp: Date.now() }));
-        } catch (e) { console.warn("[KBO] localStorage 저장 실패:", e.message); }
-        return data;
-      } catch (e) { console.warn(`[KBO ✗ ${p.name}] JSON parse 실패`); }
-    } catch (e) {
-      console.warn(`[KBO ✗ ${p.name}]`, e.message);
-    }
-  }
-
-  // 5) localStorage 폴백
-  try {
-    const cached = localStorage.getItem("kbo_cache");
-    if (cached) {
-      const { data } = JSON.parse(cached);
-      if (data?.rows?.length) {
-        console.log("[KBO ✓ localStorage]", data.rows.length, "rows");
-        return data;
-      }
-    }
-  } catch (e) { console.warn("[KBO] localStorage 읽기 실패:", e.message); }
-
-  // 6) 로컬 캐시 파일 폴백 — refresh-kbo.sh로 미리 받아둔 파일
-  try {
-    const res = await fetch("kbo-cache.json", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.rows?.length) {
-        console.log("[KBO ✓ local cache file]", data.rows.length, "rows");
-        return data;
-      }
-    }
-  } catch (e) { /* 캐시 없거나 file:// 등 */ }
-
-  throw new Error("KBO 데이터 fetch 실패 — 인터넷 연결 상태를 확인하세요");
-}
 
 // MLB·NPB·CPBL과 동일한 시그니처: range → items[]
 async function fetchKboTransactions(range) {
-  const year = new Date().getFullYear();
-  // ASMX 메서드를 GET 쿼리 스트링으로 호출 (서버가 GET·POST 둘 다 허용)
-  const params = new URLSearchParams({
-    seasonId: String(year),
-    monthId: "0", bdSc: "0", teamName: "", searchIf: "",
-    pageNo: "1", listCount: "300",
-  }).toString();
-  const apiUrl = `https://www.koreabaseball.com/ws/Player.asmx/GetTradeList?${params}`;
+  // GitHub Actions가 주기적으로 갱신한 kbo-cache.json을 로드
+  // ?_= 타임스탬프로 브라우저 캐시 무효화 → 항상 최신 파일
+  const res = await fetch(`kbo-cache.json?_=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`kbo-cache.json 로드 실패 (HTTP ${res.status})`);
+  const data = await res.json();
+  if (!data?.rows) throw new Error("KBO 데이터 형식 오류");
 
-  const data = await fetchKboJsonViaGet(apiUrl);
-  if (!data?.rows) throw new Error("KBO 응답에 rows 없음");
+  console.log(`[KBO ✓] kbo-cache.json ${data.rows.length}건 로드`);
 
   // 각 row의 셀 배열: [날짜, 항목, 팀, 선수(포지션), 비고]
   const items = (data.rows || []).map(r => {
@@ -1519,7 +1439,7 @@ async function refresh() {
     renderLeague("kbo", items);
     totals.kbo = items.length;
     document.getElementById("count-kbo").textContent = `${items.length}건 (최근 7일)`;
-    document.getElementById("src-stat-kbo").innerHTML = `<span class="ok">koreabaseball.com · ${items.length}건 (최근 7일)</span>`;
+    document.getElementById("src-stat-kbo").innerHTML = `<span class="ok">최신 갱신 · ${items.length}건 (최근 7일)</span>`;
   } catch (e) {
     console.error("[KBO] 수집 실패:", e);
     document.getElementById("list-kbo").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
@@ -1645,7 +1565,7 @@ document.getElementById("kbo-paste-clipboard").addEventListener("click", async (
 
 // 자동 감지: KBO 트랜잭션 데이터로 보이는지 휴리스틱 판정
 function looksLikeKboData(text) {
-  if (!text || text.length < 15) return false;
+  if (!text || text.length < 10) return false;
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 1) return false;
   let dateCount = 0, teamCount = 0;
@@ -1659,21 +1579,36 @@ function looksLikeKboData(text) {
 
 // 전역 paste 리스너: 페이지 어디서나 Ctrl+V → KBO 데이터면 자동 분석
 document.addEventListener("paste", (e) => {
-  // textarea/input 안이면 그대로 통과 (기본 paste 동작 유지)
-  const tag = (e.target.tagName || "").toLowerCase();
-  if (tag === "textarea" || tag === "input") return;
-
   const text = (e.clipboardData || window.clipboardData)?.getData("text") || "";
   if (!looksLikeKboData(text)) return;
 
+  const tag = (e.target.tagName || "").toLowerCase();
+
+  // textarea 내에서: 텍스트 입력 후 자동 분석
+  if (tag === "textarea") {
+    e.preventDefault();
+    const ta = document.getElementById("kbo-paste");
+    if (ta) {
+      ta.value = text;
+      const details = document.querySelector(".paste-wrap details");
+      if (details) details.open = true;
+      setTimeout(() => runKboPaste(text, "자동감지"), 100);
+    }
+    return;
+  }
+
+  // textarea 외부: 자동으로 섹션 펼치고 분석
+  if (tag === "input") return;
+
   e.preventDefault();
   const ta = document.getElementById("kbo-paste");
-  ta.value = text;
-  // 섹션 자동 펼치기
-  const details = document.querySelector(".paste-wrap details");
-  if (details) details.open = true;
-  runKboPaste(text, "자동감지");
-});
+  if (ta) {
+    ta.value = text;
+    const details = document.querySelector(".paste-wrap details");
+    if (details) details.open = true;
+    setTimeout(() => runKboPaste(text, "자동감지"), 100);
+  }
+}, true); // 캡처 단계에서 감지 (더 높은 우선순위)
 
 /* ============================
  * MLB 필터 (콜업 / 부상자 / 마이너 옵션·이관·배정 / DFA 지정)
@@ -1754,12 +1689,38 @@ _bind("filter-cpbl-callup", "change", applyCpblFilter);
 _bind("filter-cpbl-minor", "change", applyCpblFilter);
 
 _bind("refreshBtn", "click", refresh);
+
+// 페이지 로드시 클립보드 자동 확인 (KBO 데이터면 자동 분석)
+async function autoCheckClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text && looksLikeKboData(text)) {
+      console.log("[Auto-detect] 클립보드에서 KBO 데이터 감지 → 자동 분석");
+      const ta = document.getElementById("kbo-paste");
+      if (ta) {
+        ta.value = text;
+        const details = document.querySelector(".paste-wrap details");
+        if (details) details.open = true;
+        setTimeout(() => runKboPaste(text, "클립보드 자동감지"), 200);
+      }
+    }
+  } catch (e) {
+    // 클립보드 접근 권한 없음 — 조용히 실패 (사용자 행동 필요)
+    console.log("[Auto-detect] 클립보드 접근 불가 (권한 필요)");
+  }
+}
+
 // DOM이 이미 파싱 완료 상태(스크립트가 body 끝에 있음)면 즉시 실행, 아니면 이벤트 대기
 if (document.readyState === "loading") {
-  window.addEventListener("DOMContentLoaded", refresh);
+  window.addEventListener("DOMContentLoaded", () => {
+    refresh();
+    // refresh 완료 후 클립보드 확인 (약 1초 뒤)
+    setTimeout(autoCheckClipboard, 1000);
+  });
 } else {
   // 비동기로 호출해 현재 스크립트가 끝난 후 실행
   setTimeout(refresh, 0);
+  setTimeout(autoCheckClipboard, 1500);
 }
 </script>
 </body>
