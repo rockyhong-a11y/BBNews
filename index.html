@@ -1627,7 +1627,7 @@ document.getElementById("kbo-paste-clipboard").addEventListener("click", async (
 
 // 자동 감지: KBO 트랜잭션 데이터로 보이는지 휴리스틱 판정
 function looksLikeKboData(text) {
-  if (!text || text.length < 15) return false;
+  if (!text || text.length < 10) return false;
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 1) return false;
   let dateCount = 0, teamCount = 0;
@@ -1641,21 +1641,36 @@ function looksLikeKboData(text) {
 
 // 전역 paste 리스너: 페이지 어디서나 Ctrl+V → KBO 데이터면 자동 분석
 document.addEventListener("paste", (e) => {
-  // textarea/input 안이면 그대로 통과 (기본 paste 동작 유지)
-  const tag = (e.target.tagName || "").toLowerCase();
-  if (tag === "textarea" || tag === "input") return;
-
   const text = (e.clipboardData || window.clipboardData)?.getData("text") || "";
   if (!looksLikeKboData(text)) return;
 
+  const tag = (e.target.tagName || "").toLowerCase();
+
+  // textarea 내에서: 텍스트 입력 후 자동 분석
+  if (tag === "textarea") {
+    e.preventDefault();
+    const ta = document.getElementById("kbo-paste");
+    if (ta) {
+      ta.value = text;
+      const details = document.querySelector(".paste-wrap details");
+      if (details) details.open = true;
+      setTimeout(() => runKboPaste(text, "자동감지"), 100);
+    }
+    return;
+  }
+
+  // textarea 외부: 자동으로 섹션 펼치고 분석
+  if (tag === "input") return;
+
   e.preventDefault();
   const ta = document.getElementById("kbo-paste");
-  ta.value = text;
-  // 섹션 자동 펼치기
-  const details = document.querySelector(".paste-wrap details");
-  if (details) details.open = true;
-  runKboPaste(text, "자동감지");
-});
+  if (ta) {
+    ta.value = text;
+    const details = document.querySelector(".paste-wrap details");
+    if (details) details.open = true;
+    setTimeout(() => runKboPaste(text, "자동감지"), 100);
+  }
+}, true); // 캡처 단계에서 감지 (더 높은 우선순위)
 
 /* ============================
  * MLB 필터 (콜업 / 부상자 / 마이너 옵션·이관·배정 / DFA 지정)
