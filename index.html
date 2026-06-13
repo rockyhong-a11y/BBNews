@@ -365,7 +365,7 @@
   <section class="league" data-league="kbo">
     <h2><span class="dot"></span>KBO 한국프로야구<span class="count" id="count-kbo">0건</span></h2>
     <div class="src-info">
-      <span>소스: <b>koreabaseball.com/Player/Trade.aspx</b></span>
+      <span>소스: <b>kbo-cache.json</b> (GitHub Actions 자동 갱신)</span>
       <span id="src-stat-kbo"></span>
     </div>
     <div class="paste-wrap">
@@ -868,82 +868,20 @@ function isInRange(isoDate, range) {
 
 /* ============================
  * KBO: koreabaseball.com/Player/Trade.aspx
- *   MLB·NPB·CPBL과 동일한 패턴 적용:
- *   - fetchKboTransactions(range) → items 배열 직접 반환
- *   - 결과 데이터 구조와 렌더링 흐름이 다른 리그와 일치
+ *   GitHub Actions가 주기적으로 kbo-cache.json 갱신 → 항상 최신 데이터
+ *   프론트는 kbo-cache.json만 로드 (캐시 없이 매번 새로 요청)
  * ============================ */
-
-// KBO는 모든 공개 CORS 프록시 IP를 차단하고 Referer 헤더를 요구 → 매번 진입시 최신 정보 갱신
-// 해결: 캐시 없이 항상 신선한 API 호출 → 실패시만 로컬 캐시 파일 폴백
-async function fetchKboJsonViaGet(apiUrl) {
-  // 1) 직접 호출 시도 (CORS 허용 환경에서만 동작)
-  try {
-    const res = await fetch(apiUrl, {
-      cache: "no-store",
-      headers: { "Referer": "https://www.koreabaseball.com/Player/Trade.aspx" },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      console.log("[KBO ✓ direct]", data.rows?.length, "rows");
-      return data;
-    }
-  } catch (e) { console.warn("[KBO] 직접 호출 실패:", e.message); }
-
-  // 2~6) 다양한 CORS 프록시 시도
-  const proxies = [
-    { name: "api.codetabs.com",    url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(apiUrl)}` },
-    { name: "api.allorigins.win",  url: `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}` },
-    { name: "corsproxy.io",        url: `https://corsproxy.io/?${encodeURIComponent(apiUrl)}` },
-    { name: "cors-anywhere.herokuapp.com", url: `https://cors-anywhere.herokuapp.com/${apiUrl.replace(/^https?:\/\//, "")}` },
-    { name: "thingproxy.freeboard.io", url: `https://thingproxy.freeboard.io/fetch/${apiUrl}` },
-  ];
-
-  for (const p of proxies) {
-    try {
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 12000);
-      const res = await fetch(p.url, { cache: "no-store", signal: ctrl.signal });
-      clearTimeout(tid);
-      if (!res.ok) { console.warn(`[KBO ✗ ${p.name}] HTTP ${res.status}`); continue; }
-      const text = await res.text();
-      try {
-        const data = JSON.parse(text);
-        console.log(`[KBO ✓ ${p.name}]`, data.rows?.length, "rows");
-        return data;
-      } catch (e) { console.warn(`[KBO ✗ ${p.name}] JSON parse 실패`); }
-    } catch (e) {
-      console.warn(`[KBO ✗ ${p.name}]`, e.message?.slice(0, 50));
-    }
-  }
-
-  // 7) 로컬 캐시 파일 폴백 (최후의 수단 — 오프라인 모드)
-  try {
-    const res = await fetch("kbo-cache.json", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.rows?.length) {
-        console.log("[KBO ✓ local file]", data.rows.length, "rows (오프라인 폴백)");
-        return data;
-      }
-    }
-  } catch (e) { /* 캐시 없거나 file:// */ }
-
-  throw new Error("KBO 데이터를 불러올 수 없습니다. 인터넷 연결을 확인하세요.");
-}
 
 // MLB·NPB·CPBL과 동일한 시그니처: range → items[]
 async function fetchKboTransactions(range) {
-  const year = new Date().getFullYear();
-  // ASMX 메서드를 GET 쿼리 스트링으로 호출 (서버가 GET·POST 둘 다 허용)
-  const params = new URLSearchParams({
-    seasonId: String(year),
-    monthId: "0", bdSc: "0", teamName: "", searchIf: "",
-    pageNo: "1", listCount: "300",
-  }).toString();
-  const apiUrl = `https://www.koreabaseball.com/ws/Player.asmx/GetTradeList?${params}`;
+  // GitHub Actions가 주기적으로 갱신한 kbo-cache.json을 로드
+  // ?_= 타임스탬프로 브라우저 캐시 무효화 → 항상 최신 파일
+  const res = await fetch(`kbo-cache.json?_=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`kbo-cache.json 로드 실패 (HTTP ${res.status})`);
+  const data = await res.json();
+  if (!data?.rows) throw new Error("KBO 데이터 형식 오류");
 
-  const data = await fetchKboJsonViaGet(apiUrl);
-  if (!data?.rows) throw new Error("KBO 응답에 rows 없음");
+  console.log(`[KBO ✓] kbo-cache.json ${data.rows.length}건 로드`);
 
   // 각 row의 셀 배열: [날짜, 항목, 팀, 선수(포지션), 비고]
   const items = (data.rows || []).map(r => {
@@ -1501,7 +1439,7 @@ async function refresh() {
     renderLeague("kbo", items);
     totals.kbo = items.length;
     document.getElementById("count-kbo").textContent = `${items.length}건 (최근 7일)`;
-    document.getElementById("src-stat-kbo").innerHTML = `<span class="ok">koreabaseball.com · ${items.length}건 (최근 7일)</span>`;
+    document.getElementById("src-stat-kbo").innerHTML = `<span class="ok">최신 갱신 · ${items.length}건 (최근 7일)</span>`;
   } catch (e) {
     console.error("[KBO] 수집 실패:", e);
     document.getElementById("list-kbo").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;

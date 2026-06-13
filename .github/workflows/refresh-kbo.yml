@@ -1,0 +1,52 @@
+name: KBO 데이터 자동 갱신
+
+on:
+  schedule:
+    - cron: '0 0,6,12,18 * * *'  # KST 9, 15, 21, 03시 (하루 4회)
+  workflow_dispatch:               # 수동 실행 가능
+
+jobs:
+  refresh-kbo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: KBO 데이터 갱신
+        run: |
+          YEAR=$(date +%Y)
+          URL="https://www.koreabaseball.com/ws/Player.asmx/GetTradeList"
+          PARAMS="seasonId=${YEAR}&monthId=0&bdSc=0&teamName=&searchIf=&pageNo=1&listCount=300"
+
+          echo "🔄 KBO 데이터 fetch 중 (year=${YEAR})..."
+          curl -sf "${URL}?${PARAMS}" \
+            -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Referer: https://www.koreabaseball.com/Player/Trade.aspx" \
+            -H "Accept: application/json, */*" \
+            -H "Accept-Language: ko-KR,ko;q=0.9" \
+            -o kbo-cache.json
+
+          ROWS=$(python3 -c "import json; d=json.load(open('kbo-cache.json')); print(len(d.get('rows', [])))" 2>/dev/null || echo "0")
+          echo "✅ 레코드 수: ${ROWS}건"
+
+          if [ "$ROWS" = "0" ]; then
+            echo "❌ 유효한 데이터 없음 — 중단"
+            exit 1
+          fi
+
+      - name: 변경 확인 및 커밋
+        run: |
+          if git diff --quiet kbo-cache.json; then
+            echo "변경 없음 — 스킵"
+          else
+            ROWS=$(python3 -c "import json; d=json.load(open('kbo-cache.json')); print(len(d.get('rows', [])))" 2>/dev/null || echo "?")
+            LATEST=$(python3 -c "import json; rows=json.load(open('kbo-cache.json')).get('rows',[]); print(rows[0]['row'][0]['Text'] if rows else '-')" 2>/dev/null || echo "-")
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add kbo-cache.json
+            git commit -m "KBO 데이터 자동 갱신: ${ROWS}건 (최신 ${LATEST}) — $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')"
+            git push
+          fi
