@@ -1752,12 +1752,37 @@ _bind("filter-cpbl-minor", "change", applyCpblFilter);
 
 _bind("refreshBtn", "click", refresh);
 
+// 페이지 로드시 클립보드 자동 확인 (KBO 데이터면 자동 분석)
+async function autoCheckClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text && looksLikeKboData(text)) {
+      console.log("[Auto-detect] 클립보드에서 KBO 데이터 감지 → 자동 분석");
+      const ta = document.getElementById("kbo-paste");
+      if (ta) {
+        ta.value = text;
+        const details = document.querySelector(".paste-wrap details");
+        if (details) details.open = true;
+        setTimeout(() => runKboPaste(text, "클립보드 자동감지"), 200);
+      }
+    }
+  } catch (e) {
+    // 클립보드 접근 권한 없음 — 조용히 실패 (사용자 행동 필요)
+    console.log("[Auto-detect] 클립보드 접근 불가 (권한 필요)");
+  }
+}
+
 // DOM이 이미 파싱 완료 상태(스크립트가 body 끝에 있음)면 즉시 실행, 아니면 이벤트 대기
 if (document.readyState === "loading") {
-  window.addEventListener("DOMContentLoaded", refresh);
+  window.addEventListener("DOMContentLoaded", () => {
+    refresh();
+    // refresh 완료 후 클립보드 확인 (약 1초 뒤)
+    setTimeout(autoCheckClipboard, 1000);
+  });
 } else {
   // 비동기로 호출해 현재 스크립트가 끝난 후 실행
   setTimeout(refresh, 0);
+  setTimeout(autoCheckClipboard, 1500);
 }
 </script>
 </body>
