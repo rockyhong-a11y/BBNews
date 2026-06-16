@@ -874,14 +874,36 @@ function isInRange(isoDate, range) {
 
 // MLB·NPB·CPBL과 동일한 시그니처: range → items[]
 async function fetchKboTransactions(range) {
-  // GitHub Actions가 주기적으로 갱신한 kbo-cache.json을 로드
-  // ?_= 타임스탬프로 브라우저 캐시 무효화 → 항상 최신 파일
-  const res = await fetch(`kbo-cache.json?_=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`kbo-cache.json 로드 실패 (HTTP ${res.status})`);
-  const data = await res.json();
+  // 1순위: 로컬 프록시 서버 (serve.py 실행 중이면 매 페이지 로드마다 실시간 fetch)
+  // 2순위: GitHub Actions가 주기적으로 갱신한 kbo-cache.json
+  let data = null;
+  let source = "";
+
+  // 로컬 서버 시도 (타임아웃 짧게 설정 → 서버 없으면 즉시 폴백)
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 2000);
+    const res = await fetch(`/api/kbo?year=${new Date().getFullYear()}&count=300`, {
+      cache: "no-store",
+      signal: ctrl.signal,
+    });
+    clearTimeout(tid);
+    if (res.ok) {
+      data = await res.json();
+      source = "local server (실시간)";
+    }
+  } catch (e) { /* 서버 없음 → 캐시로 폴백 */ }
+
+  // 폴백: GitHub Actions 캐시 (서버가 없거나 file:// 등)
+  if (!data?.rows) {
+    const res = await fetch(`kbo-cache.json?_=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`kbo-cache.json 로드 실패 (HTTP ${res.status})`);
+    data = await res.json();
+    source = "kbo-cache.json (GitHub Actions)";
+  }
   if (!data?.rows) throw new Error("KBO 데이터 형식 오류");
 
-  console.log(`[KBO ✓] kbo-cache.json ${data.rows.length}건 로드`);
+  console.log(`[KBO ✓] ${source} · ${data.rows.length}건 로드`);
 
   // 각 row의 셀 배열: [날짜, 항목, 팀, 선수(포지션), 비고]
   const items = (data.rows || []).map(r => {

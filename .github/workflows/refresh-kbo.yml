@@ -2,7 +2,8 @@ name: KBO 데이터 자동 갱신
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # 매 2시간마다 (UTC 기준)
+    # KST 10:00, 15:00, 20:00, 24:00 (= UTC 01:00, 06:00, 11:00, 15:00)
+    - cron: '0 1,6,11,15 * * *'
   workflow_dispatch:               # 수동 실행 가능
 
 jobs:
