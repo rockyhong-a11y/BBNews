@@ -5,6 +5,114 @@
     {
       "row": [
         {
+          "Text": "2026-07-05",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "소속선수 추가 등록",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "한화",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "이도훈(외야수)",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "육성선수 말소",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        }
+      ],
+      "Class": null,
+      "OnClick": null,
+      "Style": null,
+      "Value": null,
+      "Id": null
+    },
+    {
+      "row": [
+        {
+          "Text": "2026-07-05",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "등번호 변경",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "한화",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "이도훈(외야수)",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "08→60",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        }
+      ],
+      "Class": null,
+      "OnClick": null,
+      "Style": null,
+      "Value": null,
+      "Id": null
+    },
+    {
+      "row": [
+        {
           "Text": "2026-07-04",
           "Class": null,
           "Scope": null,
@@ -16093,118 +16201,10 @@
       "Style": null,
       "Value": null,
       "Id": null
-    },
-    {
-      "row": [
-        {
-          "Text": "2026-04-07",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "부상자 명단",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "삼성",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "김태훈(투수)",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "10일",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        }
-      ],
-      "Class": null,
-      "OnClick": null,
-      "Style": null,
-      "Value": null,
-      "Id": null
-    },
-    {
-      "row": [
-        {
-          "Text": "2026-04-07",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "재활선수(외국인 선수)",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "두산",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "플렉센(투수)",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "4.21 벤자민 대체 외국인선수 등록",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        }
-      ],
-      "Class": null,
-      "OnClick": null,
-      "Style": null,
-      "Value": null,
-      "Id": null
     }
   ],
   "tfoot": [],
-  "totalCnt": "400",
+  "totalCnt": "402",
   "headerClass": null,
   "tbodyClass": null,
   "tfootClass": null,
