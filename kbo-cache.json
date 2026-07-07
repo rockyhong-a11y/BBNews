@@ -113,6 +113,168 @@
     {
       "row": [
         {
+          "Text": "2026-07-07",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "군보류 자유계약선수",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "한화",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "남지민(투수)",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        }
+      ],
+      "Class": null,
+      "OnClick": null,
+      "Style": null,
+      "Value": null,
+      "Id": null
+    },
+    {
+      "row": [
+        {
+          "Text": "2026-07-07",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "트레이드(웨이버)",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "KT",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "이정범(외야수)",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "SSG→KT",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        }
+      ],
+      "Class": null,
+      "OnClick": null,
+      "Style": null,
+      "Value": null,
+      "Id": null
+    },
+    {
+      "row": [
+        {
+          "Text": "2026-07-07",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "자유계약선수",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "SSG",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "하재훈(외야수)",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        },
+        {
+          "Text": "",
+          "Class": null,
+          "Scope": null,
+          "RowSpan": null,
+          "ColSpan": null,
+          "Width": null,
+          "TypeObj": null
+        }
+      ],
+      "Class": null,
+      "OnClick": null,
+      "Style": null,
+      "Value": null,
+      "Id": null
+    },
+    {
+      "row": [
+        {
           "Text": "2026-07-06",
           "Class": null,
           "Scope": null,
@@ -16039,172 +16201,10 @@
       "Style": null,
       "Value": null,
       "Id": null
-    },
-    {
-      "row": [
-        {
-          "Text": "2026-04-12",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "부상자 명단",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "LG",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "손주영(투수)",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "15일",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        }
-      ],
-      "Class": null,
-      "OnClick": null,
-      "Style": null,
-      "Value": null,
-      "Id": null
-    },
-    {
-      "row": [
-        {
-          "Text": "2026-04-12",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "부상자 명단",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "키움",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "서건창(내야수)",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "15일",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        }
-      ],
-      "Class": null,
-      "OnClick": null,
-      "Style": null,
-      "Value": null,
-      "Id": null
-    },
-    {
-      "row": [
-        {
-          "Text": "2026-04-12",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "부상자 명단",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "키움",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "어준서(내야수)",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        },
-        {
-          "Text": "30일",
-          "Class": null,
-          "Scope": null,
-          "RowSpan": null,
-          "ColSpan": null,
-          "Width": null,
-          "TypeObj": null
-        }
-      ],
-      "Class": null,
-      "OnClick": null,
-      "Style": null,
-      "Value": null,
-      "Id": null
     }
   ],
   "tfoot": [],
-  "totalCnt": "411",
+  "totalCnt": "414",
   "headerClass": null,
   "tbodyClass": null,
   "tfootClass": null,
