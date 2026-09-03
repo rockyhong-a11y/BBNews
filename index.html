@@ -697,12 +697,14 @@ const PROXIES = [
   { fn: u => `https://corsproxy.io/?${encodeURIComponent(u)}`, type: "raw" },
   { fn: u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, type: "raw" },
   { fn: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, type: "json" },
+  // 위 무료 프록시들이 봇 차단(Cloudflare 등)에 막힐 때의 최종 폴백
+  { fn: u => `https://r.jina.ai/${u}`, type: "raw", headers: { "X-Return-Format": "html" } },
 ];
 async function fetchViaProxy(url) {
   const errs = [];
   for (const p of PROXIES) {
     try {
-      const res = await fetch(p.fn(url), { cache: "no-store" });
+      const res = await fetch(p.fn(url), { cache: "no-store", headers: p.headers, signal: AbortSignal.timeout(8000) });
       if (!res.ok) { errs.push(res.status); continue; }
       if (p.type === "json") {
         const d = await res.json();
@@ -1041,9 +1043,9 @@ const NPB_PAGES = [
 
 async function fetchNpbAll(range) {
   const year = new Date().getFullYear();
-  const all = [];
   const stats = {};
-  for (const p of NPB_PAGES) {
+  // 프록시 폴백(최대 8초x5) 대기 시간이 페이지마다 누적되지 않도록 병렬 실행
+  const tasks = NPB_PAGES.map(p => (async () => {
     const url = `https://npb.jp/announcement/${year}/${p.path}`;
     try {
       const html = await fetchViaProxy(url);
@@ -1051,13 +1053,81 @@ async function fetchNpbAll(range) {
       const inRange = items.filter(tx => isInRange(tx.date, range));
       stats[p.typeLabel] = `${inRange.length}/${items.length}`;
       console.log(`[NPB ${p.typeLabel}]`, debug, "샘플 행:", debug.sample);
-      all.push(...inRange);
+      return inRange;
     } catch (e) {
       console.warn("NPB page failed:", url, e.message);
       stats[p.typeLabel] = "✗";
+      return [];
+    }
+  })());
+  tasks.push((async () => {
+    try {
+      const rosterItems = await fetchNpbRoster(range);
+      stats["1군 등록/말소"] = `${rosterItems.length}건`;
+      return rosterItems;
+    } catch (e) {
+      console.warn("NPB roster fetch failed:", e.message);
+      stats["1군 등록/말소"] = "✗";
+      return [];
+    }
+  })());
+  const results = await Promise.all(tasks);
+  return { items: results.flat(), stats };
+}
+
+/* ============================
+ * NPB: 출장선수 등록/말소 (1군 콜업·말소, 일별 공시)
+ *   - npb.jp/announcement/roster/roster_MMDD.html (당해년도 전용, 일자별 페이지)
+ * ============================ */
+async function fetchNpbRoster(range) {
+  const days = [];
+  for (const d = new Date(range.start); d < range.end; d.setDate(d.getDate() + 1)) {
+    days.push({
+      iso: fmtApiDate(d),
+      mmdd: `${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`,
+    });
+  }
+  const results = await Promise.allSettled(days.map(async ({ iso, mmdd }) => {
+    const url = `https://npb.jp/announcement/roster/roster_${mmdd}.html`;
+    const html = await fetchViaProxy(url);
+    return parseNpbRosterPage(html, iso);
+  }));
+  const all = [];
+  for (const r of results) if (r.status === "fulfilled") all.push(...r.value);
+  return all;
+}
+
+function parseNpbRosterPage(html, dateISO) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const out = [];
+  for (const box of doc.querySelectorAll(".half_inner_wrap")) {
+    const isRemoval = (box.querySelector("h5")?.textContent || "").includes("抹消");
+    const type = isRemoval ? "optioned" : "selected";
+    const typeLabel = isRemoval ? "1군 말소" : "1군 등록";
+    for (const row of box.querySelectorAll("table tr")) {
+      const cells = [...row.querySelectorAll("td")];
+      if (cells.length < 4) continue; // "なし"(이동 없음) 행 제외
+      const team = matchNpbTeam(cells[0].textContent);
+      const pos = cells[1].textContent.trim();
+      const playerLink = cells[3].querySelector("a");
+      const player = (playerLink || cells[3]).textContent.replace(/\s+/g, " ").trim();
+      if (!player) continue;
+      const romaji = katakanaToRomaji(player);
+      const displayPlayer = (romaji && romaji.toUpperCase() !== player.toUpperCase())
+        ? `${player}(${romaji.toUpperCase()})` : player;
+      out.push({
+        league: "npb",
+        date: dateISO,
+        type, typeLabel,
+        player: displayPlayer,
+        fromTeam: null,
+        toTeam: team,
+        description: pos,
+        link: playerLink ? `https://npb.jp${playerLink.getAttribute("href")}` : buildPlayerSearchUrl("npb", player, team?.code),
+      });
     }
   }
-  return { items: all, stats };
+  return out;
 }
 
 function parseNpbPage(html, pageInfo, sourceUrl, defaultYear) {
