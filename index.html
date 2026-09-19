@@ -422,8 +422,9 @@
     </div>
     <div class="filter-row">
       <span class="filter-label">필터:</span>
-      <label class="filter-chip"><input type="checkbox" id="filter-cpbl-callup"><span>콜업 표시</span></label>
-      <label class="filter-chip"><input type="checkbox" id="filter-cpbl-minor"><span>2군 강등 표시</span></label>
+      <!-- CPBL 異動은 대부분 升一軍(1군 등록)·降二軍(말소)이라 기본 숨김이면 사실상 전부 가려진다 → 기본 표시 -->
+      <label class="filter-chip"><input type="checkbox" id="filter-cpbl-callup" checked><span>1군 등록(升一軍) 표시</span></label>
+      <label class="filter-chip"><input type="checkbox" id="filter-cpbl-minor" checked><span>말소·2군 강등(降二軍) 표시</span></label>
     </div>
     <div class="tx-list" id="list-cpbl"><div class="tx-empty">갱신 버튼을 눌러 데이터를 불러오세요.</div></div>
   </section>
