@@ -1235,6 +1235,13 @@ const CPBL_EVENT_MAP = [
   { zh: "支配下登錄",   type: "selected", label: "지배하 등록" },
   { zh: "新註冊",       type: "signed",   label: "신규 등록" },
   { zh: "註冊",         type: "signed",   label: "등록" },
+  // CPBL 異動 페이지에서 가장 빈번한 항목들 — 매핑이 없어 "(미번역)"으로 표시되던 것 보강
+  { zh: "新增登錄",     type: "signed",   label: "신규 등록" },
+  { zh: "取消登錄",     type: "optioned", label: "등록 말소" },
+  { zh: "登錄",         type: "selected", label: "등록" },
+  { zh: "註銷",         type: "optioned", label: "말소" },
+  { zh: "讓渡",         type: "waiver",   label: "양도(웨이버)" },
+  { zh: "轉隊",         type: "trade",    label: "이적" },
   { zh: "升一軍",       type: "selected", label: "콜업 (1군 등록)" },
   { zh: "降二軍",       type: "optioned", label: "2군 강등" },
   { zh: "戰力外",       type: "released", label: "전력외" },
@@ -1312,8 +1319,43 @@ function parseCpblRows(html) {
   return out;
 }
 
-// CPBL 단일 소스: cpbl.com.tw (번체 중문)
-async function fetchCpblTransactions(range) {
+// CPBL 1순위: cpbl-cache.json (GitHub Actions가 curl로 수집·커밋)
+//   cpbl.com.tw는 CORS + Cloudflare WAF로 브라우저에서 직접·프록시 모두 자주 실패한다.
+//   KBO와 동일하게 서버에서 수집한 캐시를 읽는 것이 1순위, 프록시는 폴백.
+async function fetchCpblFromCache(range) {
+  const res = await fetch(`cpbl-cache.json?_=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`cpbl-cache.json 로드 실패 (HTTP ${res.status})`);
+  const data = await res.json();
+  if (!Array.isArray(data?.rows) || !data.rows.length) throw new Error("cpbl-cache.json 비어있음");
+
+  const items = data.rows.map(r => {
+    const cls = classifyCpblEvent(r.event);
+    const displayName = (r.player && r.playerEn && r.player !== r.playerEn)
+      ? `${r.player}(${r.playerEn})`
+      : (r.player || r.playerEn || "—");
+    return {
+      league: "cpbl",
+      date: r.date,
+      type: cls.type,
+      typeLabel: cls.label,
+      player: displayName,
+      fromTeam: null,
+      toTeam: matchCpblTeam(r.team),
+      description: "",
+      link: r.acnt
+        ? `https://en.cpbl.com.tw/team/person?Acnt=${r.acnt}`
+        : "https://en.cpbl.com.tw/player/trans",
+    };
+  });
+
+  const inRange = items.filter(tx => isInRange(tx.date, range));
+  console.log(`[CPBL ✓ cache] 전체 ${items.length}건 → 7일내 ${inRange.length}건 (갱신 ${data.updated || "-"})`);
+  window._cpblSource = `자동 수집 · ${(data.updated || "").slice(0, 16).replace("T", " ")}`;
+  return inRange;
+}
+
+// CPBL 폴백: 브라우저에서 CORS 프록시 경유 (Cloudflare에 막히면 실패)
+async function fetchCpblViaProxy(range) {
   // ZH(번체) + EN 두 페이지 fetch → 선수명 "중문(영문)" 표시
   const ZH = "https://cpbl.com.tw/player/trans";
   const EN = "https://en.cpbl.com.tw/player/trans";
@@ -1363,8 +1405,21 @@ async function fetchCpblTransactions(range) {
   });
 
   const inRange = merged.filter(tx => isInRange(tx.date, range));
-  console.log(`[CPBL] zh ${zhRows.length}건 + en ${enRows.length}건 → 병합 ${merged.length} (7일내 ${inRange.length})`);
+  console.log(`[CPBL ✓ proxy] zh ${zhRows.length}건 + en ${enRows.length}건 → 병합 ${merged.length} (7일내 ${inRange.length})`);
+  if (!merged.length) throw new Error("프록시 응답에서 트랜잭션을 찾지 못함 (차단 추정)");
+  window._cpblSource = "프록시 직접 수집";
   return inRange;
+}
+
+// CPBL 진입점: 캐시 우선 → 실패 시 프록시 폴백
+async function fetchCpblTransactions(range) {
+  window._cpblSource = "";
+  try {
+    return await fetchCpblFromCache(range);
+  } catch (e) {
+    console.warn("[CPBL] 캐시 사용 불가 → 프록시 폴백:", e.message);
+    return await fetchCpblViaProxy(range);
+  }
 }
 
 /* ============================
@@ -1587,11 +1642,15 @@ async function refresh() {
     window._cpblAllItems = items;
     applyCpblFilter();
     totals.cpbl = items.length;
-    document.getElementById("src-stat-cpbl").innerHTML = `<span class="ok">cpbl.com.tw · ${items.length}건 (최근 7일)</span>`;
+    const src = window._cpblSource || "cpbl.com.tw";
+    // 0건은 실패가 아니라 "해당 기간 이적·등록 없음" — 구분해 표시
+    document.getElementById("src-stat-cpbl").innerHTML = items.length > 0
+      ? `<span class="ok">${escapeHtml(src)} · ${items.length}건 (최근 7일)</span>`
+      : `<span>${escapeHtml(src)} · 최근 7일 이적·등록 없음</span>`;
   } catch (e) {
     console.error("CPBL 실패:", e);
     document.getElementById("list-cpbl").innerHTML = `<div class="tx-error">불러오기 실패: ${escapeHtml(e.message || "unknown")}</div>`;
-    document.getElementById("src-stat-cpbl").innerHTML = `<span class="err">실패</span>`;
+    document.getElementById("src-stat-cpbl").innerHTML = `<span class="err">실패: ${escapeHtml((e.message || "").slice(0, 60))}</span>`;
     totals.cpbl = 0;
   }
 
