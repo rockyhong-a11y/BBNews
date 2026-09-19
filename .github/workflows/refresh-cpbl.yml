@@ -1,0 +1,37 @@
+name: CPBL 데이터 자동 갱신
+
+on:
+  schedule:
+    # KST 10:30, 15:30, 20:30, 00:30 (= UTC 01:30, 06:30, 11:30, 15:30)
+    - cron: '30 1,6,11,15 * * *'
+  workflow_dispatch:               # 수동 실행 가능
+
+jobs:
+  refresh-cpbl:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        run: pip install --quiet beautifulsoup4
+
+      - name: CPBL 데이터 갱신
+        run: python3 refresh-cpbl.py
+
+      - name: 변경 확인 및 커밋
+        run: |
+          if git diff --quiet cpbl-cache.json 2>/dev/null; then
+            echo "변경 없음 — 스킵"
+          else
+            ROWS=$(python3 -c "import json; print(len(json.load(open('cpbl-cache.json'))['rows']))" 2>/dev/null || echo "?")
+            LATEST=$(python3 -c "import json; r=json.load(open('cpbl-cache.json'))['rows']; print(r[0]['date'] if r else '-')" 2>/dev/null || echo "-")
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add cpbl-cache.json
+            git commit -m "CPBL 데이터 자동 갱신: ${ROWS}건 (최신 ${LATEST}) — $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')"
+            git push
+          fi
