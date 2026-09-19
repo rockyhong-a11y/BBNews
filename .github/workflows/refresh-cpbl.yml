@@ -24,7 +24,8 @@ jobs:
 
       - name: 변경 확인 및 커밋
         run: |
-          if git diff --quiet cpbl-cache.json 2>/dev/null; then
+          # git diff는 추적되지 않는 새 파일을 못 잡는다 → status --porcelain 사용
+          if [ -z "$(git status --porcelain -- cpbl-cache.json)" ]; then
             echo "변경 없음 — 스킵"
           else
             ROWS=$(python3 -c "import json; print(len(json.load(open('cpbl-cache.json'))['rows']))" 2>/dev/null || echo "?")
