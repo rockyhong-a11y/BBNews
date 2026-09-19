@@ -247,7 +247,9 @@ def dump_diagnostics(label, html):
     print("::endgroup::")
 
 
-def collect(url, origin, label, year):
+def collect(url, origin, label, year, optional=False):
+    """optional=True이면 실패해도 진단 덤프 없이 조용히 넘어간다.
+    EN 사이트는 Anti-DDoS로 자주 막히지만 영문명은 부가 정보라 필수가 아니다."""
     html, cookie = curl_get(url)
     print(f"[{label}] HTML {len(html)} bytes, 쿠키 {'있음' if cookie else '없음'}")
     if not html:
@@ -255,6 +257,11 @@ def collect(url, origin, label, year):
     rows = parse_rows(html, year)
     print(f"[{label}] 표 파싱 {len(rows)}건")
     if not rows:
+        if optional:
+            blocked = any(m in html.lower() for m in
+                          ("anti-ddos", "flood protection", "just a moment", "cloudflare"))
+            print(f"[{label}] 수집 불가{' (차단 페이지)' if blocked else ''} — 부가 정보라 건너뜀")
+            return []
         dump_diagnostics(label, html)
         rows = try_ajax(html, cookie, url, origin, year)
         print(f"[{label}] AJAX 폴백 {len(rows)}건")
@@ -264,8 +271,9 @@ def collect(url, origin, label, year):
 def main():
     year = datetime.now(KST).year
 
+    # ZH가 원본(필수), EN은 선수 영문명 보강용(선택)
     zh_rows = collect(ZH_URL, "https://cpbl.com.tw", "ZH", year)
-    en_rows = collect(EN_URL, "https://en.cpbl.com.tw", "EN", year)
+    en_rows = collect(EN_URL, "https://en.cpbl.com.tw", "EN", year, optional=True)
 
     base = zh_rows or en_rows
     if not base:
