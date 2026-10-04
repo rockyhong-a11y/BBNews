@@ -8,62 +8,35 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - run: pip install --quiet beautifulsoup4 playwright
-      - name: Compare official links and route spelling
+      - run: pip install --quiet beautifulsoup4
+      - name: Verify collection and cache preservation
         run: |
+          python3 -m py_compile refresh-cpbl.py
           python3 - <<'PY'
-          import pathlib, re, subprocess, tempfile
-          from concurrent.futures import ThreadPoolExecutor
-          from bs4 import BeautifulSoup
-          from datetime import datetime
-          urls = [
-              "https://www.cpbl.com.tw/player",
-              "https://www.cpbl.com.tw/team?ClubNo=ACN",
-              "https://www.cpbl.com.tw/theme/client/js/vue.min.js?v=20250821",
-              "https://www.cpbl.com.tw/player/trans/",
-              "https://www.cpbl.com.tw/Player/Trans",
-              "https://www.cpbl.com.tw/Schedule",
-              "https://www.cpbl.com.tw/player/trans?year=2026&month=10",
-              "https://www.cpbl.com.tw/player/trans?year=2026&month=9",
-              "https://www.cpbl.com.tw/player/trans?year=2025&month=9",
-              "https://www.cpbl.com.tw/player/trans?KindCode=A&Year=2026&Month=10",
-          ]
-          def fetch(url):
-              with tempfile.TemporaryDirectory() as td:
-                  p = pathlib.Path(td)
-                  res = subprocess.run(["curl","-sS","-L","--max-redirs","4","--max-time","20",
-                      "-c",str(p/"cookies"),"-b",str(p/"cookies"),"-A","Mozilla/5.0",
-                      "-D",str(p/"headers"),"-o",str(p/"body"),
-                      "-w","HTTP %{http_code}; URL %{url_effective}; bytes %{size_download}",url],
-                      capture_output=True,text=True,timeout=25)
-                  body = (p/"body").read_text(errors="replace") if (p/"body").exists() else ""
-                  soup = BeautifulSoup(body,"html.parser")
-                  title = soup.title.get_text() if soup.title else "-"
-                  return f"{url}\n{res.stdout} exit {res.returncode}\ntitle {title}; tables {len(soup.find_all('table'))}\npreview {re.sub(chr(10),' ',body[:150])}"
-          with ThreadPoolExecutor(max_workers=4) as pool:
-              for result in pool.map(fetch,urls):
-                  print("::group::"+result+"\n::endgroup::",flush=True)
-
+          import hashlib, json, pathlib, subprocess, sys
+          cache = pathlib.Path("cpbl-cache.json")
+          before = hashlib.sha256(cache.read_bytes()).hexdigest()
+          res = subprocess.run([sys.executable, "refresh-cpbl.py"])
+          after = hashlib.sha256(cache.read_bytes()).hexdigest()
+          data = json.loads(cache.read_text())
+          print("collector exit:", res.returncode, flush=True)
+          print("cache unchanged:", before == after, flush=True)
+          print("cache updated:", data["updated"], "rows:", len(data["rows"]),
+                "latest:", max((r["date"] for r in data["rows"]), default="-"), flush=True)
+          if res.returncode:
+              assert before == after, "Failed collection modified the cache"
+          else:
+              assert data["rows"], "Successful collection produced no rows"
           PY
-      - name: Install browser for source verification
-        run: python3 -m playwright install --with-deps chromium
-      - name: Verify movement page with a browser session
+      - name: Commit a successful refresh if present
         run: |
-          python3 - <<'PY'
-          import re
-          from playwright.sync_api import sync_playwright
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
-              page = browser.new_page()
-              for url in ("https://www.cpbl.com.tw/", "https://www.cpbl.com.tw/player/trans", "https://www.cpbl.com.tw/schedule"):
-                  response = page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                  page.wait_for_timeout(3000)
-                  print("BROWSER", url, "status", response.status if response else "-", "URL", page.url,
-                        "title", page.title(), "tables", page.locator("table").count(), flush=True)
-                  print("Cookie names", [c["name"] for c in page.context.cookies()], flush=True)
-                  print("Text preview", re.sub(r"\\s+", " ", page.locator("body").inner_text())[:1000], flush=True)
-              browser.close()
-          PY
+          if ! git diff --quiet -- cpbl-cache.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add cpbl-cache.json
+            git commit -m "CPBL cache refresh after source verification"
+            git push
+          fi

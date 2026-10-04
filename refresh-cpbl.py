@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """CPBL 이적·등록·말소 데이터 수집 → cpbl-cache.json
 
-cpbl.com.tw는 CORS + Cloudflare WAF로 브라우저에서 직접 접근이 불가능하다.
-또한 Python urllib/requests는 WAF에 차단되지만 curl은 통과한다.
-(allofbaseball/scripts/fetch_cpbl.py 에서 검증된 방식)
+공식 www 호스트에 curl로 접근하며 CDN 리다이렉트 쿠키를 유지한다.
+HTTP 오류 또는 데이터 파싱 실패 시 기존 캐시를 보존한다.
 
 따라서 GitHub Actions 러너에서 curl로 수집해 JSON 캐시로 커밋한다.
 
@@ -24,7 +23,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone, timedelta
 
-ZH_URL = "https://cpbl.com.tw/player/trans"
+ZH_URL = "https://www.cpbl.com.tw/player/trans"
 EN_URL = "https://en.cpbl.com.tw/player/trans"
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -33,20 +32,28 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 KST = timezone(timedelta(hours=9))
 
 
-# ── curl 헬퍼 (Cloudflare WAF 통과) ──────────────────────────
+# ── curl 헬퍼 (쿠키 및 리다이렉트 유지) ──────────────────────
 def curl_get(url):
     """curl로 GET → (html, __RequestVerificationToken 쿠키값)"""
     with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as tf:
         tmp = tf.name
+    with tempfile.NamedTemporaryFile(suffix=".cookies", delete=False) as cf:
+        cookie_jar = cf.name
     try:
         res = subprocess.run(
-            ["curl", "-s", "-L", "-D", "-", "-o", tmp,
+            ["curl", "-sS", "-L", "--fail-with-body", "--max-redirs", "5",
+             "-c", cookie_jar, "-b", cookie_jar, "-D", "-", "-o", tmp,
              "-H", f"User-Agent: {UA}",
              "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
              "-H", "Accept-Language: zh-TW,zh;q=0.9,en;q=0.8",
              "--max-time", "30", "--connect-timeout", "15", url],
             capture_output=True, text=True, timeout=45,
         )
+        statuses = re.findall(r"^HTTP/\S+\s+(\d+)", res.stdout, re.MULTILINE)
+        print(f"   GET {url}: HTTP {statuses[-1] if statuses else '?'} (curl {res.returncode})")
+        if res.returncode:
+            print(f"   curl 오류: {res.stderr.strip()}")
+            return "", ""
         cookie = ""
         for line in res.stdout.splitlines():
             if "set-cookie" in line.lower():
@@ -56,8 +63,9 @@ def curl_get(url):
         with open(tmp, encoding="utf-8", errors="replace") as f:
             return f.read(), cookie
     finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+        for path in (tmp, cookie_jar):
+            if os.path.exists(path):
+                os.unlink(path)
 
 
 def curl_post(api_url, body_dict, token, cookie, referer, origin):
@@ -272,7 +280,7 @@ def main():
     year = datetime.now(KST).year
 
     # ZH가 원본(필수), EN은 선수 영문명 보강용(선택)
-    zh_rows = collect(ZH_URL, "https://cpbl.com.tw", "ZH", year)
+    zh_rows = collect(ZH_URL, "https://www.cpbl.com.tw", "ZH", year)
     en_rows = collect(EN_URL, "https://en.cpbl.com.tw", "EN", year, optional=True)
 
     base = zh_rows or en_rows
