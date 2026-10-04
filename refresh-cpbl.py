@@ -80,6 +80,8 @@ def collect_form_months(session, page_url, months):
     """현재 공식 HTML의 action/method/필드명/토큰을 사용한다."""
     html, response_url = session.request(page_url)
     form = query_form(html, response_url)
+    if not form["unfiltered"]:
+        raise ValueError("공식 기본 폼이 전체 구단·이동 범위를 제공하지 않음")
     results = {}
     for year, month in months:
         payload = dict(form["data"])
@@ -94,6 +96,8 @@ def collect_form_months(session, page_url, months):
               + (" (새 기록 없음)" if not rows else ""))
         # 응답에서 갱신된 CSRF 토큰을 다음 조회에 사용한다.
         form = query_form(html, response_url)
+        if not form["unfiltered"]:
+            raise ValueError("공식 응답 폼의 조회 범위가 일부로 변경됨")
     return results
 
 

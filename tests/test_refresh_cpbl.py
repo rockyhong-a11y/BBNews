@@ -16,8 +16,8 @@ def page(year, month, token, rows=""):
       <input name="Year" value="{year}">
       <input name="Month" value="{month}">
       <input name="__RequestVerificationToken" value="{token}">
-      <input name="ClubNo" value="ACN"><input name="KindCode" value="01">
-      <input name="Keyword" value="someone">
+      <input name="ClubNo" value=""><input name="KindCode" value="">
+      <input name="Keyword" value="">
     </form><table><tr><th>異動日期</th><th>球員</th><th>球隊</th>
     <th>異動原因</th></tr>{rows}</table>'''
 
@@ -47,7 +47,7 @@ class FormCollectionTests(unittest.TestCase):
         self.assertEqual(first[2], {
             "Year": "2026", "Month": "9",
             "__RequestVerificationToken": "first-token",
-            "ClubNo": "ACN", "KindCode": "01", "Keyword": "someone",
+            "ClubNo": "", "KindCode": "", "Keyword": "",
         })
         self.assertEqual(second[2]["Month"], "10")
         self.assertEqual(second[2]["__RequestVerificationToken"], "second-token")
@@ -57,6 +57,14 @@ class FormCollectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             refresh_cpbl.collect_form_months(
                 session, refresh_cpbl.ZH_URL, [(2026, 10)])
+
+    def test_filtered_default_cannot_replace_all_teams(self):
+        session = FakeSession([page(2026, 10, "token").replace(
+            'name="ClubNo" value=""', 'name="ClubNo" value="ACN"')])
+        with self.assertRaises(ValueError):
+            refresh_cpbl.collect_form_months(
+                session, refresh_cpbl.ZH_URL, [(2026, 10)])
+        self.assertEqual(len(session.calls), 1)
 
 
 class RefreshTests(unittest.TestCase):

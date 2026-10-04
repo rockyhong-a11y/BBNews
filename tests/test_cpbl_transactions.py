@@ -104,6 +104,16 @@ class QueryFormTests(unittest.TestCase):
 
 
 class MonthPageTests(unittest.TestCase):
+    def test_filtered_pages_cannot_replace_a_whole_month(self):
+        for name in ("ClubNo", "TeamNo", "KindCode", "TransType", "Keyword"):
+            html = page().replace("</form>", f'<input name="{name}" value="partial"></form>')
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                parse_month_page(html, 2026, 10)
+
+    def test_nonempty_all_option_uses_official_label(self):
+        html = page().replace('value="" selected>全部球隊', 'value="all-code" selected>全部球隊')
+        self.assertEqual(parse_month_page(html, 2026, 10), [])
+
     def test_header_only_or_explicit_empty_month_is_valid(self):
         self.assertEqual(parse_month_page(page(), 2026, 10), [])
         self.assertEqual(parse_month_page(page('<tr><td colspan="4">查無資料</td></tr>'), 2026, 10), [])

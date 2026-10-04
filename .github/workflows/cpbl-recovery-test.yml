@@ -41,3 +41,60 @@ jobs:
         run: |
           echo "::error::Official CPBL source is still inaccessible; cache was preserved."
           exit 1
+  existing-proxies:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet beautifulsoup4
+      - name: Verify existing app proxy routes against the same official URL
+        run: |
+          cat > proxy-probe.py <<'PY'
+          import concurrent.futures, json, pathlib, subprocess
+          from urllib.parse import quote
+          from bs4 import BeautifulSoup
+          from cpbl_transactions import parse_month_page
+          out=pathlib.Path("proxy-probe-output"); out.mkdir()
+          official="https://www.cpbl.com.tw/player/trans"
+          providers={
+           "allorigins-raw":lambda u:"https://api.allorigins.win/raw?url="+quote(u,safe=""),
+           "allorigins-json":lambda u:"https://api.allorigins.win/get?url="+quote(u,safe=""),
+           "corsproxy":lambda u:"https://corsproxy.io/?"+quote(u,safe=""),
+           "codetabs":lambda u:"https://api.codetabs.com/v1/proxy?quest="+quote(u,safe=""),
+          }
+          def probe(item):
+           name,make,month=item
+           target=official+f"?year=2026&month={month}"
+           label=name+"-"+str(month)
+           body=out/(label+".txt")
+           result=subprocess.run(["curl","-sS","-L","--max-time","30","--connect-timeout","10",
+               "-H","Cache-Control: no-cache","-o",str(body),"-w","%{http_code}",make(target)],
+               text=True,capture_output=True,timeout=40)
+           text=body.read_text(encoding="utf-8",errors="replace") if body.exists() else ""
+           status=result.stdout.strip()
+           if name=="allorigins-json" and status=="200":
+               try:
+                   data=json.loads(text)
+                   print(label,"UPSTREAM",data.get("status"),flush=True)
+                   text=data.get("contents") or ""
+               except ValueError: pass
+           soup=BeautifulSoup(text,"html.parser")
+           print(label,"HTTP",status,"curl",result.returncode,"bytes",len(text.encode()),
+                 "title",soup.title.get_text() if soup.title else "-",
+                 "text",soup.get_text(" ",strip=True)[:300],flush=True)
+           if status=="200":
+               try:
+                   rows=parse_month_page(text,2026,month,page_url=target)
+                   print("VALIDATED",label,"rows",len(rows),"latest",max((r["date"] for r in rows),default=None),flush=True)
+               except ValueError as e: print("INVALID",label,str(e),flush=True)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+           list(pool.map(probe,[(n,p,m) for n,p in providers.items() for m in (9,10)]))
+          
+          PY
+          python3 proxy-probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpbl-existing-proxy-evidence
+          path: proxy-probe-output

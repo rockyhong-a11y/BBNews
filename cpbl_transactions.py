@@ -190,6 +190,7 @@ def query_form(html, page_url):
     candidates = []
     for form in soup.find_all("form"):
         fields, controls = {}, {}
+        unfiltered = True
         for control in form.find_all(["input", "select", "textarea"]):
             name = control.get("name")
             if not name or control.has_attr("disabled"):
@@ -200,6 +201,14 @@ def query_form(html, page_url):
             if kind in {"checkbox", "radio"} and not control.has_attr("checked"):
                 continue
             controls[name] = _control_value(control)
+            if name.lower() in {"clubno", "teamno", "kindcode", "transtype", "keyword"} and controls[name].strip():
+                # A nonempty value is safe only if the official option says All.
+                # Do not guess a magic value or replace a whole month with one team.
+                option = (control.find("option", attrs={"value": controls[name]})
+                          if control.name == "select" else None)
+                label = option.get_text(" ", strip=True).lower() if option else ""
+                if label not in {"全部", "全部球隊", "全部異動", "所有球隊", "all", "all teams", "all transactions"}:
+                    unfiltered = False
             if name.lower() in {"year", "month"}:
                 fields[name.lower()] = name
         if set(fields) != {"year", "month"}:
@@ -211,7 +220,8 @@ def query_form(html, page_url):
         if method not in {"get", "post"}:
             raise ValueError("Unsupported movement form method")
         candidates.append({"url": action, "method": method, "data": controls,
-                           "year_field": fields["year"], "month_field": fields["month"]})
+                           "year_field": fields["year"], "month_field": fields["month"],
+                           "unfiltered": unfiltered})
     if len(candidates) != 1:
         raise ValueError("Exactly one official Year/Month form is required")
     return candidates[0]
@@ -232,6 +242,8 @@ def parse_month_page(html, year, month, page_url="https://www.cpbl.com.tw/player
     if any(marker in low for marker in _BLOCK_MARKERS) or html.strip().lower() == "not found":
         raise ValueError("CPBL returned a blocked/error page")
     form = query_form(html, page_url)
+    if not form["unfiltered"]:
+        raise ValueError("A filtered movement page cannot replace a whole month")
     try:
         selected_year = int(form["data"][form["year_field"]])
         selected_month = int(form["data"][form["month_field"]])
