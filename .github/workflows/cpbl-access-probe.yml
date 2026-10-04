@@ -14,33 +14,53 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install --quiet curl_cffi
-      - name: Verify documented Reader POST API
+      - run: python -m pip install --quiet beautifulsoup4 playwright
+      - run: python -m playwright install-deps chromium
+      - name: Verify same-session headed Chrome on both official sites
         run: |
-          python - <<'PY'
-          import json, pathlib, re
-          from curl_cffi import requests
-          out=pathlib.Path("probe-output")
-          out.mkdir(exist_ok=True)
-          s=requests.Session(impersonate="chrome")
-          headers={"X-No-Cache":"true","X-Respond-With":"html","Accept":"text/html"}
-          cases=[
-              ("reader-post-current","POST","https://r.jina.ai/",{"url":"https://www.cpbl.com.tw/player/trans?year=2026&month=10"}),
-              ("reader-post-prior","POST","https://r.jina.ai/",{"url":"https://www.cpbl.com.tw/player/trans?year=2026&month=9"}),
-              ("reader-http","GET","https://r.jina.ai/http://www.cpbl.com.tw/player/trans",None),
-          ]
-          for label,method,url,data in cases:
-              try:
-                  res=s.request(method,url,data=data,headers=headers,timeout=100)
-                  print("SOURCE",label,"HTTP",res.status_code,"bytes",len(res.content),flush=True)
-                  print("body",res.text[:8000],flush=True)
-                  (out/(label+".html")).write_text(res.text,encoding="utf-8")
-              except Exception as e:
-                  print("SOURCE",label,"ERROR",str(e),flush=True)
+          cat > /tmp/cpbl-browser-probe.py <<'PY'
+import json, pathlib, re, tempfile
+from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
+out=pathlib.Path("probe-output")
+out.mkdir(exist_ok=True)
+def describe(label,status,url,html):
+    soup=BeautifulSoup(html,"html.parser")
+    headers=[[re.sub(r"\s+"," ",c.get_text(" ",strip=True)) for c in tr.find_all(["td","th"])]
+             for table in soup.find_all("table") for tr in table.find_all("tr")[:1]]
+    print("BROWSER",label,"status",status,"URL",url,"bytes",len(html.encode()),
+          "title",soup.title.get_text() if soup.title else "-","headers",headers,flush=True)
+    print("FORMS",[{"method":f.get("method"),"action":f.get("action"),"fields":[e.get("name") for e in f.select("[name]")]} for f in soup.find_all("form")],flush=True)
+    print("TEXT",soup.get_text(" ",strip=True)[:2000],flush=True)
+    (out/(label+".html")).write_text(html,encoding="utf-8")
+with sync_playwright() as pw, tempfile.TemporaryDirectory() as profile:
+    context=pw.chromium.launch_persistent_context(profile,channel="chrome",headless=False,
+            locale="zh-TW",args=["--disable-blink-features=AutomationControlled"])
+    page=context.pages[0] if context.pages else context.new_page()
+    for label,origin in (("ZH","https://www.cpbl.com.tw"),("EN","https://en.cpbl.com.tw")):
+        try:
+            response=page.goto(origin+"/",wait_until="domcontentloaded",timeout=45000)
+            page.wait_for_timeout(12000)
+            print("HOME",label,"initial",response.status if response else "-", "URL",page.url,
+                  "title",page.title(),"cookies",[c["name"] for c in context.cookies() if "cpbl.com.tw" in c["domain"]],flush=True)
+            for month in (10,9):
+                url=origin+f"/player/trans?year=2026&month={month}"
+                result=page.evaluate("""async url => {
+                  const r=await fetch(url,{credentials:'include',cache:'no-store'});
+                  return {status:r.status,url:r.url,text:await r.text()};
+                }""",url)
+                describe(label+"-fetch-"+str(month),result["status"],result["url"],result["text"])
+            response=page.goto(origin+"/player/trans",wait_until="domcontentloaded",timeout=45000)
+            page.wait_for_timeout(12000)
+            describe(label+"-navigation",response.status if response else 0,page.url,page.content())
+        except Exception as e:
+            print("BROWSER ERROR",label,str(e)[:500],flush=True)
+    context.close()
 
           PY
+          xvfb-run -a python /tmp/cpbl-browser-probe.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cpbl-reader-source
+          name: cpbl-headed-source
           path: probe-output/
