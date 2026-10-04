@@ -1327,7 +1327,7 @@ async function fetchCpblFromCache(range) {
   const res = await fetch(`cpbl-cache.json?_=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`cpbl-cache.json 로드 실패 (HTTP ${res.status})`);
   const data = await res.json();
-  if (!Array.isArray(data?.rows) || !data.rows.length) throw new Error("cpbl-cache.json 비어있음");
+  if (!Array.isArray(data?.rows)) throw new Error("cpbl-cache.json rows 형식 오류");
 
   const items = data.rows.map(r => {
     const cls = classifyCpblEvent(r.event);

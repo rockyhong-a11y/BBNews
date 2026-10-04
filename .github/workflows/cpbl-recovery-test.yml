@@ -1,0 +1,43 @@
+name: CPBL recovery validation
+on:
+  push:
+    branches: [codex/cpbl-access-recovery]
+    paths:
+      - 'refresh-cpbl.py'
+      - 'cpbl_transactions.py'
+      - 'tests/**'
+      - '.github/workflows/cpbl-recovery-test.yml'
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet beautifulsoup4
+      - run: python -m unittest discover -s tests -v
+  live:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet beautifulsoup4
+      - name: Preserve source cache checksum
+        run: sha256sum cpbl-cache.json > /tmp/cpbl-cache-before.sha256
+      - name: Verify official source
+        id: source
+        continue-on-error: true
+        run: python3 refresh-cpbl.py
+      - name: Ensure failed fetch preserves original cache
+        if: steps.source.outcome == 'failure'
+        run: sha256sum --check /tmp/cpbl-cache-before.sha256
+      - name: Report unresolved source failure
+        if: steps.source.outcome == 'failure'
+        run: |
+          echo "::error::Official CPBL source is still inaccessible; cache was preserved."
+          exit 1
