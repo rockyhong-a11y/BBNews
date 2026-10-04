@@ -6,11 +6,7 @@ on:
   workflow_dispatch:
 jobs:
   probe:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -18,60 +14,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install --quiet beautifulsoup4 curl_cffi
-      - name: Verify same-path MVC form contract
-        shell: bash
+      - run: python -m pip install --quiet curl_cffi
+      - name: Verify official source from an independent fetch network
         run: |
           python - <<'PY'
-          import importlib.util, json, pathlib, re
-          from datetime import datetime, timedelta, timezone
-          from bs4 import BeautifulSoup
+          import pathlib, re, time
           from curl_cffi import requests
-          spec=importlib.util.spec_from_file_location("cpbl","refresh-cpbl.py")
-          cpbl=importlib.util.module_from_spec(spec)
-          spec.loader.exec_module(cpbl)
-          session=requests.Session(impersonate="chrome",headers={"Accept-Language":"zh-TW,zh;q=0.9,en;q=0.8"})
-          now=datetime.now(timezone(timedelta(hours=9)))
-          prior=now.replace(day=1)-timedelta(days=1)
+          session=requests.Session(impersonate="chrome")
           out=pathlib.Path("probe-output")
           out.mkdir(exist_ok=True)
-          home=session.get("https://www.cpbl.com.tw/",timeout=30)
-          soup=BeautifulSoup(home.text,"html.parser")
-          token=soup.find("input",attrs={"name":"__RequestVerificationToken"})
-          print("HOME",home.status_code,"cookie names",list(session.cookies.keys()),"form token",bool(token),flush=True)
-          for path in ("/home/gettop5players","/home/getdetaillist"):
-              i=home.text.find("url: '"+path+"'")
-              if i<0:
-                  i=home.text.find('url: "'+path+'"')
-              print("HOME AJAX CONTRACT",path,re.sub(r"RequestVerificationToken\s*:\s*['\"][^'\"]+['\"]","RequestVerificationToken: '[redacted]'",home.text[max(i-250,0):i+800]),flush=True)
-          responses=[]
-          if token:
-              payload={e["name"]:e.get("value","") for e in token.parent.find_all("input",attrs={"name":True})}
-              payload={"__RequestVerificationToken":token["value"],"Year":str(now.year),"Month":"","ClubNo":"","KindCode":"","Keyword":""}
-              for year,month in ((now.year,str(now.month)),(prior.year,str(prior.month)),(now.year,"")):
-                  form={**payload,"Year":str(year),"Month":month}
-                  try:
-                      res=session.post("https://www.cpbl.com.tw/player/trans",data=form,headers={"Referer":"https://www.cpbl.com.tw/","Origin":"https://www.cpbl.com.tw"},timeout=30)
-                      html=res.text
-                      rows=cpbl.parse_rows(html,year)
-                      page=BeautifulSoup(html,"html.parser")
-                      print("FORM POST",year,month or "all","HTTP",res.status_code,"bytes",len(res.content),"title",page.title.get_text() if page.title else "-",
-                            "rows",len(rows),"latest",max((r["date"] for r in rows),default="-"),"cookies",list(session.cookies.keys()),flush=True)
-                      print("FORMS",[{"action":f.get("action"),"method":f.get("method"),"fields":[e.get("name") for e in f.select("[name]")]} for f in page.find_all("form")],flush=True)
-                      for r in rows[:8]:
-                          print(r,flush=True)
-                      if not rows:
-                          print("PREVIEW",re.sub(r"\s+"," ",page.get_text(" ",strip=True))[:500],flush=True)
-                      key=f"{year}-{month or 'year'}"
-                      (out/(key+".html")).write_text(html,encoding="utf-8")
-                      responses.append({"year":year,"month":month,"status":res.status_code,"rows":rows})
-                  except Exception as e:
-                      print("POST ERROR",year,month,str(e),flush=True)
-          (out/"results.json").write_text(json.dumps(responses,ensure_ascii=False,indent=2),encoding="utf-8")
+          urls=[
+              ("robots","https://www.cpbl.com.tw/robots.txt"),
+              ("reader-current","https://r.jina.ai/https://www.cpbl.com.tw/player/trans?year=2026&month=10"),
+              ("reader-previous","https://r.jina.ai/https://www.cpbl.com.tw/player/trans?year=2026&month=9"),
+          ]
+          for label,url in urls:
+              try:
+                  res=session.get(url,headers={"X-No-Cache":"true","Accept":"text/plain"},timeout=90)
+                  print("SOURCE",label,"HTTP",res.status_code,"bytes",len(res.content),"URL",res.url,flush=True)
+                  print(res.text[:14000],flush=True)
+                  (out/(label+".txt")).write_text(res.text,encoding="utf-8")
+              except Exception as e:
+                  print(label,"ERROR",str(e),flush=True)
 
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cpbl-source-${{ runner.os }}
+          name: cpbl-reader-source
           path: probe-output/
