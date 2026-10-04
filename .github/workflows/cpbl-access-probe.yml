@@ -15,27 +15,28 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install --quiet curl_cffi
-      - name: Verify official source from an independent fetch network
+      - name: Verify documented Reader POST API
         run: |
           python - <<'PY'
-          import pathlib, re, time
+          import json, pathlib, re
           from curl_cffi import requests
-          session=requests.Session(impersonate="chrome")
           out=pathlib.Path("probe-output")
           out.mkdir(exist_ok=True)
-          urls=[
-              ("robots","https://www.cpbl.com.tw/robots.txt"),
-              ("reader-current","https://r.jina.ai/https://www.cpbl.com.tw/player/trans?year=2026&month=10"),
-              ("reader-previous","https://r.jina.ai/https://www.cpbl.com.tw/player/trans?year=2026&month=9"),
+          s=requests.Session(impersonate="chrome")
+          headers={"X-No-Cache":"true","X-Respond-With":"html","Accept":"text/html"}
+          cases=[
+              ("reader-post-current","POST","https://r.jina.ai/",{"url":"https://www.cpbl.com.tw/player/trans?year=2026&month=10"}),
+              ("reader-post-prior","POST","https://r.jina.ai/",{"url":"https://www.cpbl.com.tw/player/trans?year=2026&month=9"}),
+              ("reader-http","GET","https://r.jina.ai/http://www.cpbl.com.tw/player/trans",None),
           ]
-          for label,url in urls:
+          for label,method,url,data in cases:
               try:
-                  res=session.get(url,headers={"X-No-Cache":"true","Accept":"text/plain"},timeout=90)
-                  print("SOURCE",label,"HTTP",res.status_code,"bytes",len(res.content),"URL",res.url,flush=True)
-                  print(res.text[:14000],flush=True)
-                  (out/(label+".txt")).write_text(res.text,encoding="utf-8")
+                  res=s.request(method,url,data=data,headers=headers,timeout=100)
+                  print("SOURCE",label,"HTTP",res.status_code,"bytes",len(res.content),flush=True)
+                  print("body",res.text[:8000],flush=True)
+                  (out/(label+".html")).write_text(res.text,encoding="utf-8")
               except Exception as e:
-                  print(label,"ERROR",str(e),flush=True)
+                  print("SOURCE",label,"ERROR",str(e),flush=True)
 
           PY
       - uses: actions/upload-artifact@v4
