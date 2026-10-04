@@ -11,61 +11,59 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - run: pip install --quiet beautifulsoup4
-      - name: Check official routing and request conditions
+      - run: pip install --quiet beautifulsoup4 playwright
+      - name: Compare official links and route spelling
         run: |
           python3 - <<'PY'
-          import importlib.util, pathlib, re, subprocess, tempfile
+          import pathlib, re, subprocess, tempfile
           from concurrent.futures import ThreadPoolExecutor
           from bs4 import BeautifulSoup
-          spec = importlib.util.spec_from_file_location("cpbl", "refresh-cpbl.py")
-          cpbl = importlib.util.module_from_spec(spec)
-          spec.loader.exec_module(cpbl)
-          def fetch(label, url, extra=(), bootstrap=False):
-              with tempfile.TemporaryDirectory() as td:
-                  path = pathlib.Path(td)
-                  cmd = ["curl", "-sS", "-L", "--max-redirs", "4", "--max-time", "20",
-                         "--connect-timeout", "8", "-c", str(path/"cookies"), "-b", str(path/"cookies"),
-                         "-A", cpbl.UA]
-                  if bootstrap:
-                      subprocess.run(cmd + ["-o", str(path/"home"), "https://www.cpbl.com.tw/"],
-                                     capture_output=True, text=True, timeout=25)
-                  res = subprocess.run(cmd + list(extra) + ["-D", str(path/"headers"), "-o", str(path/"body"),
-                                       "-w", "HTTP %{http_code}; URL %{url_effective}; bytes %{size_download}; version %{http_version}",
-                                       url], capture_output=True, text=True, timeout=25)
-                  html = (path/"body").read_text(errors="replace") if (path/"body").exists() else ""
-                  hdr = (path/"headers").read_text(errors="replace") if (path/"headers").exists() else ""
-                  soup = BeautifulSoup(html, "html.parser")
-                  rows = cpbl.parse_rows(html, 2026) if "/player/trans" in url else []
-                  out = [label, res.stdout, "curl exit " + str(res.returncode) + " " + res.stderr[:200]]
-                  out += [line for line in hdr.splitlines() if re.match(r"^(HTTP/|server:|content-type:|location:|x-cache:|x-request-id:|date:|vary:)", line, re.I)]
-                  out += ["Cookie names " + str(re.findall(r"^set-cookie:\s*([^=\s]+)=", hdr, re.M | re.I)),
-                          "title " + (soup.title.get_text() if soup.title else "-"),
-                          "rows " + str(len(rows)), "latest " + max((r["date"] for r in rows), default="-")]
-                  out += [str(r) for r in rows[:3]]
-                  if not rows and "/player/trans" in url:
-                      out.append("preview " + re.sub(r"\s+", " ", html[:300]))
-                  if label in ("ZH homepage", "EN homepage"):
-                      links = [(a.get("href"), a.get_text(" ", strip=True)) for a in soup.select("a[href]")
-                               if re.search(r"trans|player|schedule|team", a.get("href",""), re.I)]
-                      out += ["Official links " + str(list(dict.fromkeys(links))[:50]),
-                              "Script sources " + str([s.get("src") for s in soup.select("script[src]")]),
-                              "inline AJAX urls " + str(re.findall(r"url\s*:\s*['\"]([^'\"]+)['\"]", html)[:20])]
-                  return "\n".join(out)
-          cases = [
-              ("ZH homepage", "https://www.cpbl.com.tw/", (), False),
-              ("EN homepage", "https://en.cpbl.com.tw/", (), False),
-              ("ZH HTTP1.1", "https://www.cpbl.com.tw/player/trans", ("--http1.1",), False),
-              ("ZH HTTP2", "https://www.cpbl.com.tw/player/trans", ("--http2",), False),
-              ("ZH official kindCode", "https://www.cpbl.com.tw/player/trans?KindCode=A", (), False),
-              ("ZH fresh query", "https://www.cpbl.com.tw/player/trans?_", (), False),
-              ("ZH browser headers", "https://www.cpbl.com.tw/player/trans",
-               ("-e","https://www.cpbl.com.tw/","-H","Sec-Fetch-Site: same-origin",
-                "-H","Sec-Fetch-Mode: navigate","-H","Sec-Fetch-Dest: document","-H","Upgrade-Insecure-Requests: 1"), True),
-              ("ZH schedule", "https://www.cpbl.com.tw/schedule", (), False),
+          from datetime import datetime
+          urls = [
+              "https://www.cpbl.com.tw/player",
+              "https://www.cpbl.com.tw/team?ClubNo=ACN",
+              "https://www.cpbl.com.tw/theme/client/js/vue.min.js?v=20250821",
+              "https://www.cpbl.com.tw/player/trans/",
+              "https://www.cpbl.com.tw/Player/Trans",
+              "https://www.cpbl.com.tw/Schedule",
+              "https://www.cpbl.com.tw/player/trans?year=2026&month=10",
+              "https://www.cpbl.com.tw/player/trans?year=2026&month=9",
+              "https://www.cpbl.com.tw/player/trans?year=2025&month=9",
+              "https://www.cpbl.com.tw/player/trans?KindCode=A&Year=2026&Month=10",
           ]
+          def fetch(url):
+              with tempfile.TemporaryDirectory() as td:
+                  p = pathlib.Path(td)
+                  res = subprocess.run(["curl","-sS","-L","--max-redirs","4","--max-time","20",
+                      "-c",str(p/"cookies"),"-b",str(p/"cookies"),"-A","Mozilla/5.0",
+                      "-D",str(p/"headers"),"-o",str(p/"body"),
+                      "-w","HTTP %{http_code}; URL %{url_effective}; bytes %{size_download}",url],
+                      capture_output=True,text=True,timeout=25)
+                  body = (p/"body").read_text(errors="replace") if (p/"body").exists() else ""
+                  soup = BeautifulSoup(body,"html.parser")
+                  title = soup.title.get_text() if soup.title else "-"
+                  return f"{url}\n{res.stdout} exit {res.returncode}\ntitle {title}; tables {len(soup.find_all('table'))}\npreview {re.sub(chr(10),' ',body[:150])}"
           with ThreadPoolExecutor(max_workers=4) as pool:
-              for result in pool.map(lambda args: fetch(*args), cases):
-                  print("::group::" + result + "\n::endgroup::", flush=True)
+              for result in pool.map(fetch,urls):
+                  print("::group::"+result+"\n::endgroup::",flush=True)
 
+          PY
+      - name: Install browser for source verification
+        run: python3 -m playwright install --with-deps chromium
+      - name: Verify movement page with a browser session
+        run: |
+          python3 - <<'PY'
+          import re
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+              for url in ("https://www.cpbl.com.tw/", "https://www.cpbl.com.tw/player/trans", "https://www.cpbl.com.tw/schedule"):
+                  response = page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                  page.wait_for_timeout(3000)
+                  print("BROWSER", url, "status", response.status if response else "-", "URL", page.url,
+                        "title", page.title(), "tables", page.locator("table").count(), flush=True)
+                  print("Cookie names", [c["name"] for c in page.context.cookies()], flush=True)
+                  print("Text preview", re.sub(r"\\s+", " ", page.locator("body").inner_text())[:1000], flush=True)
+              browser.close()
           PY
