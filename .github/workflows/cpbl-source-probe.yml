@@ -1,0 +1,68 @@
+name: CPBL source diagnosis
+on:
+  push:
+    paths:
+      - '.github/workflows/cpbl-source-probe.yml'
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet beautifulsoup4
+      - name: Compare official CPBL responses
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          import re
+          import subprocess
+          import tempfile
+          from datetime import datetime, timezone, timedelta
+          spec = importlib.util.spec_from_file_location("cpbl", "refresh-cpbl.py")
+          cpbl = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(cpbl)
+          year = datetime.now(timezone(timedelta(hours=9))).year
+          cases = [
+              ("old without cookies", "https://cpbl.com.tw/player/trans", False),
+              ("www without cookies", "https://www.cpbl.com.tw/player/trans", False),
+              ("old with cookies", "https://cpbl.com.tw/player/trans", True),
+              ("www with cookies", "https://www.cpbl.com.tw/player/trans", True),
+              ("EN with cookies", "https://en.cpbl.com.tw/player/trans", True),
+              ("official navigation", "https://www.cpbl.com.tw/", True),
+          ]
+          with tempfile.TemporaryDirectory() as td:
+              for idx, (label, url, cookies) in enumerate(cases):
+                  body = pathlib.Path(td) / f"{idx}.html"
+                  headers = pathlib.Path(td) / f"{idx}.headers"
+                  jar = pathlib.Path(td) / f"{idx}.cookies"
+                  cmd = ["curl", "-sS", "-L", "--max-redirs", "5",
+                         "--max-time", "20", "--connect-timeout", "10",
+                         "-A", cpbl.UA,
+                         "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                         "-H", "Accept-Language: zh-TW,zh;q=0.9,en;q=0.8",
+                         "-D", str(headers), "-o", str(body),
+                         "-w", "HTTP %{http_code}; URL %{url_effective}; bytes %{size_download}"]
+                  if cookies:
+                      cmd += ["-c", str(jar), "-b", str(jar)]
+                  res = subprocess.run(cmd + [url], capture_output=True, text=True, timeout=25)
+                  html = body.read_text(errors="replace") if body.exists() else ""
+                  hdr = headers.read_text(errors="replace") if headers.exists() else ""
+                  print(f"::group::{label}", flush=True)
+                  print(res.stdout, "curl exit", res.returncode, res.stderr[:250], flush=True)
+                  print("Statuses:", re.findall(r"^HTTP/[^\n]+", hdr, re.M), flush=True)
+                  print("Locations:", re.findall(r"^location:\s*([^\n]+)", hdr, re.M | re.I), flush=True)
+                  print("Cookie names:", re.findall(r"^set-cookie:\s*([^=\s]+)=", hdr, re.M | re.I), flush=True)
+                  print("HTML bytes:", len(html.encode()), "tables:", len(re.findall(r"<table\b", html, re.I)), flush=True)
+                  rows = cpbl.parse_rows(html, year)
+                  print("Parsed rows:", len(rows), "latest:", max((r["date"] for r in rows), default="-"), flush=True)
+                  for row in rows[:5]:
+                      print(row, flush=True)
+                  if label == "official navigation":
+                      print("Movement links:", re.findall(r'<a[^>]+href=["\']([^"\']*trans[^"\']*)["\'][^>]*>(.*?)</a>', html, re.I | re.S), flush=True)
+                  if not rows and label != "official navigation":
+                      print("Body preview:", re.sub(r"\s+", " ", html[:300]), flush=True)
+                  print("::endgroup::", flush=True)
+          PY
