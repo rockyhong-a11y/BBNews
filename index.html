@@ -417,7 +417,7 @@
   <section class="league" data-league="cpbl">
     <h2><span class="dot"></span>CPBL 대만프로야구<span class="count" id="count-cpbl">0건</span></h2>
     <div class="src-info">
-      <span>소스: <b>cpbl.com.tw + en.cpbl.com.tw</b> (선수명 중문+영문)</span>
+      <span>소스: <b>stats.cpbl.com.tw</b> 공식 선수 이력 + 기존 이동 기록</span>
       <span id="src-stat-cpbl"></span>
     </div>
     <div class="filter-row">
@@ -1225,6 +1225,8 @@ function parseNpbPage(html, pageInfo, sourceUrl, defaultYear) {
  * ============================ */
 // 중국어 이벤트 라벨 → 한국어 매핑 (긴 phrase 우선 매칭)
 const CPBL_EVENT_MAP = [
+  { zh: "註冊球員", type: "selected", label: "선수 등록" },
+  { zh: "合約所屬", type: "signed", label: "계약 소속" },
   // 구체적 phrase 먼저
   { zh: "合約所屬",     type: "signed",   label: "계약 소속" },
   { zh: "解除合約",     type: "released", label: "계약 해지" },
@@ -1342,16 +1344,18 @@ async function fetchCpblFromCache(range) {
       player: displayName,
       fromTeam: null,
       toTeam: matchCpblTeam(r.team),
-      description: "",
+      description: r.sourceText || r.event || "",
       link: r.acnt
-        ? `https://en.cpbl.com.tw/team/person?Acnt=${r.acnt}`
-        : "https://en.cpbl.com.tw/player/trans",
+        ? `https://stats.cpbl.com.tw/players/${r.acnt}`
+        : "https://stats.cpbl.com.tw/players",
     };
   });
 
   const inRange = items.filter(tx => isInRange(tx.date, range));
   console.log(`[CPBL ✓ cache] 전체 ${items.length}건 → 7일내 ${inRange.length}건 (갱신 ${data.updated || "-"})`);
-  window._cpblSource = `자동 수집 · ${(data.updated || "").slice(0, 16).replace("T", " ")}`;
+  window._cpblSource = `공식 이력 확인 ${(data.profilesUpdated || data.updated || "").slice(0, 16).replace("T", " ")} · 일별 이동 확인 ${(data.movementsUpdated || data.updated || "").slice(0, 10)}`;
+  const info = document.querySelector('[data-league="cpbl"] .src-info > span:first-child');
+  if (info && data.coverageNote) info.textContent = data.coverageNote;
   return inRange;
 }
 
@@ -1398,10 +1402,10 @@ async function fetchCpblViaProxy(range) {
       player: displayName,
       fromTeam: null,
       toTeam: team,
-      description: "",
+      description: r.sourceText || r.event || "",
       link: r.acnt
-        ? `https://en.cpbl.com.tw/team/person?Acnt=${r.acnt}`
-        : "https://en.cpbl.com.tw/player/trans",
+        ? `https://stats.cpbl.com.tw/players/${r.acnt}`
+        : "https://stats.cpbl.com.tw/players",
     };
   });
 
@@ -1418,8 +1422,7 @@ async function fetchCpblTransactions(range) {
   try {
     return await fetchCpblFromCache(range);
   } catch (e) {
-    console.warn("[CPBL] 캐시 사용 불가 → 프록시 폴백:", e.message);
-    return await fetchCpblViaProxy(range);
+    throw new Error(`공식 선수 이력 캐시를 불러오지 못했습니다: ${e.message}`);
   }
 }
 

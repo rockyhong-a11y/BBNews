@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""공식 CPBL 선수 이동 폼을 조회해 cpbl-cache.json을 갱신한다.
+"""새 공식 CPBL 프로필의 날짜가 명시된 등록·계약 이력을 보강한다.
 
-최근 7일이 걸치는 월을 명시해 조회한다. 정상적인 빈 월은 성공으로
-처리하고, HTTP/폼/표 검증 실패는 기존 캐시와 갱신 시각을 보존한다.
+프로필에는 일별 1·2군 승강 전체 피드가 없으므로 기존 이동 캐시와
+월별 이동 확인 시각을 보존한다. 이전 폼 수집 함수는 회귀 검사에 유지.
 """
 import json
 import os
@@ -16,6 +16,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from cpbl_transactions import (
     merge_month_rows, months_to_refresh, parse_month_page, parse_rows, query_form,
 )
+from cpbl_profiles import SOURCE, collect_profiles, merge_profile_rows
 
 ZH_URL = "https://www.cpbl.com.tw/player/trans"
 EN_URL = "https://en.cpbl.com.tw/player/trans"
@@ -177,5 +178,42 @@ def refresh(cache_path="cpbl-cache.json", now=None, collector=None):
     return 0
 
 
+def refresh_profiles(cache_path='cpbl-cache.json', now=None, collector=None):
+    """검증된 프로필 이력 보강. 월별 승강 조회 시각은 갱신하지 않는다."""
+    now = now or datetime.now(KST)
+    now = now.replace(tzinfo=KST) if now.tzinfo is None else now.astimezone(KST)
+    path = Path(cache_path)
+    tmp = None
+    try:
+        previous = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'rows': []}
+        if not isinstance(previous.get('rows'), list):
+            raise ValueError('기존 캐시 rows 형식 오류')
+        result = (collector or collect_profiles)(now.date())
+        rows = merge_profile_rows(previous['rows'], result['rows'])
+        movement_latest = max((row['date'] for row in previous['rows'] if row.get('sourceKind') != 'profile-remark'), default=None)
+        profile_latest = max((row['date'] for row in result['rows']), default=None)
+        payload = dict(previous, rows=rows, source=SOURCE,
+                       profilesUpdated=now.isoformat(timespec='seconds'),
+                       profilesChecked=result['profilesChecked'], coverage='profile-remarks',
+                       profileLatest=profile_latest, movementLatest=movement_latest,
+                       latest=max((row['date'] for row in rows), default=None),
+                       movementsUpdated=previous.get('movementsUpdated', previous.get('updated')),
+                       coverageNote=f'공식 프로필의 등록·계약 이력입니다. 일별 1·2군 등록·말소 전체 공시는 제공되지 않아 기존 이동 기록(최신 {movement_latest or "없음"})을 함께 표시합니다.')
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
+                                         prefix=f'.{path.name}.', delete=False) as output:
+            tmp = output.name
+            json.dump(payload, output, ensure_ascii=False, separators=(',', ':'))
+        os.replace(tmp, path)
+        print(f'공식 프로필 {result["profilesChecked"]}명 확인 · 보강 이력 {len(result["rows"])}건 · 전체 {len(rows)}건')
+        print(f'최신 기록 {payload["latest"]} · 일별 이동 확인 {payload["movementsUpdated"]}')
+        return 0
+    except Exception as exc:
+        print(f'CPBL 프로필 수집 실패 — 기존 캐시·확인 시각 유지: {exc}', file=sys.stderr)
+        return 1
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
 if __name__ == "__main__":
-    sys.exit(refresh())
+    sys.exit(refresh_profiles())

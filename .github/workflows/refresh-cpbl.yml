@@ -6,6 +6,7 @@ on:
     paths:
       - 'refresh-cpbl.py'
       - 'cpbl_transactions.py'
+      - 'cpbl_profiles.py'
       - 'tests/test_cpbl*.py'
       - 'tests/test_refresh_cpbl.py'
       - '.github/workflows/refresh-cpbl.yml'
@@ -30,7 +31,7 @@ jobs:
       - name: CPBL 수집 회귀 검사
         run: python3 -m unittest discover -s tests -v
 
-      - name: CPBL 데이터 갱신
+      - name: CPBL 공식 프로필 등록 이력 보강
         run: python3 refresh-cpbl.py
 
       - name: 변경 확인 및 커밋
